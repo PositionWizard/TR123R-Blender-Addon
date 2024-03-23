@@ -3,7 +3,7 @@ bl_info = {
     "author" : "MuruCoder, MaRaider, Czarpos",
     "description" : "Import/Export tool for .TRM files for Tomb Raider Remastered I-III games.",
     "blender" : (4, 0, 0),
-    "version" : (0, 6, 1),
+    "version" : (0, 6, 2),
     "category": "Import-Export",
 	"location": "File > Import/Export",
     "warning" : "Game uses DDS textures, must be handled separately.",

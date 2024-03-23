@@ -20,6 +20,9 @@ def CreateVertexGroups(trm, joints, armature, filepath):
         "shoulder_L", "shoulderB_L", "arm_L", "armB_L", "elbow_L", "elbowB_L", "wrist_L", "hand_L", "thumb_L", "fingers_L",
         "shoulder_R", "shoulderB_R", "arm_R", "armB_R", "elbow_R", "elbowB_R", "wrist_R", "hand_R", "thumb_R", "fingers_R",
         "hair_root", "hair1", "hair2", "hair3", "hair4", "hair5", "hair6", "hair7", "hair8", "hair9",
+        "EMPTY", "lip_pull_R",  "lip_pull_L", "lip_side_U_R", "lip_side_U_L", "lip_side_D_R", "lip_side_D_L", "lip_middle_U_R", "lip_middle_U_L", "lip_middle_D_R",
+        "lip_middle_D_L", "eyelid_U_R", "eyelid_U_L", "eyelid_D_R", "eyelid_D_L", "brow_outer_R", "brow_outer_L", "brow_middle_R", "brow_middle_L", "brow_inner_R",
+        "brow_inner_L", "eye_R", "eye_L", "cheek_R", "cheek_L",
         # more to be added here
     ]
 
@@ -27,6 +30,7 @@ def CreateVertexGroups(trm, joints, armature, filepath):
     vg_lists = {
         "Lara_Body": [1, 11, 14, 17, 21, 24, 27, 4, 42, 44, 47, 32, 34, 37, 6],
         "Lara_Hair": [50, 51, 52, 53, 54, 55],
+        "Lara_Head": [1, 4, 6, 60, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 7, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84],
     }
 
     # map for list decision
@@ -35,6 +39,8 @@ def CreateVertexGroups(trm, joints, armature, filepath):
         "OUTFIT_": 'Lara_Body',
         "HOLSTER_": 'Lara_Body',
         "HAND_": 'Lara_Body',
+        "_HEAD": "Lara_Head",
+        "HEAD_": "Lara_Head",
     }
 
     # decide which list to use
@@ -63,13 +69,13 @@ from bpy.props import StringProperty, BoolProperty, EnumProperty, CollectionProp
 from bpy.types import Operator
 import os
 
-class ImportTRMData(Operator, ImportHelper):
+class TRM_OT_ImportTRM(Operator, ImportHelper):
     """Load object from TRM file"""
     bl_idname = "io_tombraider123r.trm_import"
     bl_label = "Import TRM"
     bl_options = {'UNDO'}
 
-    filename_ext = ".TRM"
+    filename_ext = f"{trm_parse.TRM_FORMAT}"
 
     ###########################################
     # necessary to support multi-file import
@@ -84,7 +90,7 @@ class ImportTRMData(Operator, ImportHelper):
     ##########################################
 
     filter_glob: StringProperty(
-        default="*.TRM",
+        default=f"*{trm_parse.TRM_FORMAT}",
         options={'HIDDEN'},
         maxlen=255,
     )
@@ -103,6 +109,7 @@ class ImportTRMData(Operator, ImportHelper):
             ('ID', "ID", "Internal joint IDs"),
             ('Lara_Body', "Lara Body", "Lara's body & outfits"),
             ('Lara_Hair', "Lara Hair", "Lara's hair"),
+            ('Lara_Head', 'Lara Head', "Lara's head (only HEAD_IDLE)"),
         ),
         default='AUTO',
     )
@@ -339,7 +346,7 @@ class ImportTRMData(Operator, ImportHelper):
         f = open(filepath, 'rb')
 
         # TRM\x02 marker
-        if unpack('>I', f.read(4))[0] != 0x54524d02:
+        if unpack('>I', f.read(4))[0] != trm_parse.TRM_HEADER:
             self.report({'ERROR'}, "Not a TRM file!")
             return {'CANCELLED'}
 
@@ -370,17 +377,77 @@ class ImportTRMData(Operator, ImportHelper):
         # BYTE ALIGN
         if f.tell() % 4: f.read(4 - (f.tell()%4))
 
-        # UNKNOWN, SKIP OVER
-        num_unknown1 = trm_parse.read_uint32(f)
-        if num_unknown1 > 0:
-            f.seek(num_unknown1 * 48, 1)
-            num_unknown2 = trm_parse.read_uint32(f)
-            f.seek(num_unknown2 * 8, 1)
-            num_unknown3 = trm_parse.read_uint32(f)
-            f.seek(num_unknown3 * 4, 1)
-            num_unknown4 = trm_parse.read_ushort16(f)
-            num_unknown5 = trm_parse.read_ushort16(f)
-            f.seek(num_unknown3 * num_unknown4 * 48, 1)
+        # UNKNOWN ANIMATION DATA - STORE IN SEPARATE FILE
+        num_anim_bones = trm_parse.read_uint32(f)
+        if num_anim_bones > 0:
+            anim_bones = tuple(trm_parse.read_float_tuple(f, 12) for n in range(num_anim_bones))
+                
+            num_anim_unknown2 = trm_parse.read_uint32(f)
+            anim_unknown2 = tuple(trm_parse.read_uint32_tuple(f, 2) for n in range(num_anim_unknown2))
+            
+            num_anim_unknown3 = trm_parse.read_uint32(f)
+            anim_unknown3 = trm_parse.read_uint32_tuple(f, num_anim_unknown3) # Frame numbers?
+            
+            # print(f'num unknown 4 offset: {hex(f.tell())}')
+            num_anim_unknown4 = trm_parse.read_ushort16(f)
+            # print(f'num unknown 5 offset: {hex(f.tell())}')
+            num_anim_unknown5 = trm_parse.read_ushort16(f)  # this is unused, still unknown
+            # print(f'unknown 3x4 offset: {hex(f.tell())}')
+            anim_unknown4 = tuple(trm_parse.read_float_tuple(f, 12) for n in range(num_anim_unknown3 * num_anim_unknown4))
+            # anim_unknown4 = unpack('<%df' % (num_anim_unknown4*num_anim_unknown3*12), f.read(48*num_anim_unknown4*num_anim_unknown3))
+            # print(f'end of anim data offset: {hex(f.tell())}')
+
+            trm_anim_filepath = f'{self.directory}{filename}{trm_parse.TRM_ANIM_FORMAT}'
+            print("-------------------------------------------------")
+            print(f'SAVING UNKNOWN ANIM DATA TO "{trm_anim_filepath}" FILE...')
+            from struct import pack
+            with open(trm_anim_filepath, 'w+b') as f_anim:
+                # TRM\x02 marker
+                f_anim.write(pack(">I", trm_parse.TRM_HEADER))
+
+                f_anim.write(pack("<I", num_anim_bones))
+                f_anim.write(pack("<%df" % (12*num_anim_bones), *[x for y in anim_bones for x in y]))
+                f_anim.write(pack("<I", num_anim_unknown2))
+                f_anim.write(pack("<%dI" % (2*num_anim_unknown2), *[x for y in anim_unknown2 for x in y]))
+                f_anim.write(pack("<I", num_anim_unknown3))
+                f_anim.write(pack("<%dI" % num_anim_unknown3, *anim_unknown3))
+                f_anim.write(pack("<H", num_anim_unknown4))
+                f_anim.write(pack("<H", num_anim_unknown5))
+                f_anim.write(pack("<%df" % (12*num_anim_unknown3 * num_anim_unknown4), *[x for y in anim_unknown4 for x in y]))
+            del pack
+            self.report({'INFO'}, f'Animation data extracted to "{trm_anim_filepath}". Use this file to export this model back to the game.')
+            
+            # DEBUG
+            if False:
+                print(f'Bone amount: {num_anim_bones}')
+                n = 0
+                if n > -1:
+                    print(f'Bone data at [{n}]: {anim_bones[n]}')
+                else:
+                    print(f'Bone data: {anim_bones}')
+
+                print(f'Animation Data2: {num_anim_unknown2}')
+                n = -1
+                if n > -1:
+                    print(f'Unknown data 2 at [{n}]: {anim_unknown2[n]}')
+                else:
+                    print(f'Unknown data 2: {anim_unknown2}')
+
+                print(f'Animation Data3: {num_anim_unknown3}')
+                n = -1
+                if n > -1:
+                    print(f'Unknown data 3 at [{n}]: {anim_unknown3[n]}')
+                else:
+                    print(f'Unknown data 3: {anim_unknown3}')
+
+                print(f'Animation Data4: {num_anim_unknown4}')
+                print(f'Animation Data5: {num_anim_unknown5}')
+                n = 0
+                if n > -1:
+                    print(f'Unknown data 4 at [{n}]: {anim_unknown4[n]}')
+                else:
+                    print(f'Unknown data 4: {anim_unknown4}')
+
 
         # INDICE & VERTICE COUNTS
         num_indices = trm_parse.read_uint32(f)
@@ -402,7 +469,7 @@ class ImportTRMData(Operator, ImportHelper):
 
         f.close()
 
-        print("%d Shaders, %d Textures, %d Indices, %d Vertices, %d Joints" % (num_shaders, num_textures, num_indices, num_vertices, max_joint + 1))
+        print("%d Shaders, %d Textures, %d Indices, %d Vertices, %d Bones" % (num_shaders, num_textures, num_indices, num_vertices, max_joint + 1))
 
         # CREATE OBJECT
         trm_mesh = bpy.data.meshes.new(f'{filename}_Mesh')
@@ -627,12 +694,12 @@ class ImportTRMData(Operator, ImportHelper):
                 col.enabled = False
 
 def menu_func_import(self, context):
-    self.layout.operator(ImportTRMData.bl_idname, text="Tomb Raider I-III Remastered (.TRM)")
+    self.layout.operator(TRM_OT_ImportTRM.bl_idname, text=f"Tomb Raider I-III Remastered ({trm_parse.TRM_FORMAT})")
 
 def register():
-    bpy.utils.register_class(ImportTRMData)
+    bpy.utils.register_class(TRM_OT_ImportTRM)
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
 
 def unregister():
-    bpy.utils.unregister_class(ImportTRMData)
+    bpy.utils.unregister_class(TRM_OT_ImportTRM)
     bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
