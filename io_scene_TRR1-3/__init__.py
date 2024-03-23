@@ -3,7 +3,7 @@ bl_info = {
     "author" : "MuruCoder, MaRaider, Czarpos",
     "description" : "Import/Export tool for .TRM files for Tomb Raider Remastered I-III games.",
     "blender" : (4, 0, 0),
-    "version" : (0, 6, 0),
+    "version" : (0, 6, 1),
     "category": "Import-Export",
 	"location": "File > Import/Export",
     "warning" : "Game uses DDS textures, must be handled separately.",
@@ -24,27 +24,27 @@ if "bpy" in locals():
         reload(ops)
     del reload
 
-from .utils import find_TRM_shader, find_TRM_shader_inst
+from .utils import find_TRM_shader_ntree, find_TRM_shader_node, SHADER_DATA_NAMES, convert_val_to_vector4, set_mat_TRM_settings
 from . import trm_import, trm_export, ops
 import bpy, os
 
-def make_paths_abs(key):
-    """ Prevent Blender's relative paths of doom """
-
-    prefs = bpy.context.preferences.addons[__package__].preferences
-    sane_path = lambda p: os.path.abspath(bpy.path.abspath(p))
-
-    if key in prefs and prefs[key].startswith('//'):
-        prefs[key] = sane_path(prefs[key])
-
 class TRM_PT_Preferences(bpy.types.AddonPreferences):
     bl_idname = __package__
+
+    def make_paths_abs(self, context, key):
+        """ Prevent Blender's relative paths of doom """
+
+        prefs = context.preferences.addons[__package__].preferences
+        sane_path = lambda p: os.path.abspath(bpy.path.abspath(p))
+
+        if key in prefs and prefs[key].startswith('//'):
+            prefs[key] = sane_path(prefs[key])
 
     dds_tool_filepath: bpy.props.StringProperty(
         name="DDS Converter Path",
         description='Path to "texconv.exe" file"',
         subtype='FILE_PATH',
-        update=lambda s,c: make_paths_abs('dds_tool_filepath'),
+        update=lambda s,c: s.make_paths_abs(c, 'dds_tool_filepath'),
         default="texconv.exe"
     )
 
@@ -53,7 +53,7 @@ class TRM_PT_Preferences(bpy.types.AddonPreferences):
         description='Directory to save converted PNG textures to.\n'
                     'Leave empty to save in TEX/PNGs folder in game directory',
         subtype='DIR_PATH',
-        update=lambda s,c: make_paths_abs('tex_conv_directory'),
+        update=lambda s,c: s.make_paths_abs(c, 'tex_conv_directory'),
         default=""
     )
 
@@ -63,7 +63,7 @@ class TRM_PT_Preferences(bpy.types.AddonPreferences):
                     'Used to find texture files related to imported model.\n'
                     'Leave empty to automatically look for textures relative to directory the TRM is in',
         subtype='DIR_PATH',
-        update=lambda s,c: make_paths_abs('game_path'),
+        update=lambda s,c: s.make_paths_abs(c, 'game_path'),
         default=""
     )
 
@@ -81,7 +81,102 @@ class TRM_PT_Preferences(bpy.types.AddonPreferences):
         op = row.operator('wm.url_open', text=" Microsoft's GitHub Releases")
         op.url = "https://github.com/microsoft/DirectXTex/releases"
 
-class TRM_PT_ShaderSettings(bpy.types.Panel):
+def update_data_type(self, context, prop, data_type:str):
+    obj = context.active_object
+    if obj and obj.material_slots:
+        mat = obj.active_material
+        shader_ntree = find_TRM_shader_ntree()
+        if shader_ntree:
+            shader_node = find_TRM_shader_node(mat)
+            if shader_node:
+                data_path = self.path_from_id().split('.')[-1]
+                if data_path == 'trm_settings' and prop == 'type':
+                    val = int(getattr(mat.trm_settings, prop))
+                    if val == -1:
+                        return
+                    input = shader_node.inputs.get(data_type)
+                    input.default_value = val
+                    set_mat_TRM_settings(mat, mesh=obj.data, shader_node=shader_node, update_shadertype=False)
+                else:
+                    data = getattr(mat.trm_settings, data_path)
+                    data_name = mat.trm_settings.bl_rna.properties[data_path].name
+                
+                    val = getattr(data, prop)
+                    if data_type == 'mat' and val:
+                        val = obj.data.materials.find(val.name)+1
+                        data_type = 'float'
+                    val = convert_val_to_vector4(val, data_type)
+                
+                    input = shader_node.inputs.get(data_name)
+                    input.default_value = val
+
+class TRM_PG_ShaderDataPropTypes(bpy.types.PropertyGroup):
+    data_type: bpy.props.StringProperty(name="type", default='int')
+
+    def poll_get_material(self, mat):
+        obj = bpy.context.active_object
+        if obj and obj.type == 'MESH':
+            return mat.name in obj.data.materials and obj.active_material != mat
+
+    data_mat: bpy.props.PointerProperty(type=bpy.types.Material, name="Cubemap", poll=poll_get_material,
+                                        update=lambda s,c: update_data_type(s,c, 'data_mat', 'mat'))
+
+    data_int: bpy.props.IntProperty(name="Integer", default=0, min=0, max=255,
+                                    update=lambda s,c: update_data_type(s,c, 'data_int', 'int'))
+    data_float: bpy.props.FloatProperty(name="Float", default=0, min=0.0, max=10.0, soft_max=1.0, precision=7, step=3,
+                                        update=lambda s,c: update_data_type(s,c, 'data_float', 'float'))
+    data_color: bpy.props.FloatVectorProperty(name="Color (RGBA)",
+                                               default=(0,0,0,0),
+                                               subtype='COLOR',
+                                               min=0.0,
+                                               max=1.0,
+                                               size=4,
+                                               update=lambda s,c: update_data_type(s,c, 'data_color', 'color'))
+    data_bool: bpy.props.BoolProperty(name="Boolean", default=0,
+                                      update=lambda s,c: update_data_type(s,c, 'data_bool', 'bool'))
+
+
+class TRM_PG_ShaderSettings(bpy.types.PropertyGroup):
+    type: bpy.props.EnumProperty(
+        name=SHADER_DATA_NAMES[0],
+        items=(
+            ('0', 'Standard', "Standard diffuse shader without additional effects"),
+            ('2', 'Unknown2', "???"),
+            ('3', 'Glossy', "???"),
+            ('6', 'Unknown16', "???"),
+            ('12', 'Unknown12', "???"),
+            ('14', 'Unknown14', "???"),
+            ('18', 'Unknown18', "???"),
+            ('19', 'Unknown19', "???"),
+            ('-1', 'Other', "Custom value for experimenting")
+        ),
+        default='0',
+        update=lambda s,c: update_data_type(s,c, 'type', SHADER_DATA_NAMES[0])
+    )
+
+    data1: bpy.props.PointerProperty(
+        type=TRM_PG_ShaderDataPropTypes,
+        name=SHADER_DATA_NAMES[1],
+    )
+
+    data2: bpy.props.PointerProperty(
+        type=TRM_PG_ShaderDataPropTypes,
+        name=SHADER_DATA_NAMES[2],
+    )
+
+    data3: bpy.props.PointerProperty(
+        type=TRM_PG_ShaderDataPropTypes,
+        name=SHADER_DATA_NAMES[3],
+    )
+
+    data4: bpy.props.PointerProperty(
+        type=TRM_PG_ShaderDataPropTypes,
+        name=SHADER_DATA_NAMES[4],
+    )
+
+
+# Generic classes don't get registered in blender's environment
+class TRM_PT_ShaderSettings:
     bl_label = "TRM Shader Settings"
     bl_space_type = "PROPERTIES"
     bl_region_type = "WINDOW"
@@ -91,7 +186,6 @@ class TRM_PT_ShaderSettings(bpy.types.Panel):
     @classmethod
     def poll(cls, context):
         obj = context.active_object
-        # result = self.get_main_shader(self, obj)
         return obj and obj.type == 'MESH' and obj.active_material
     
     def draw_TRM_error(self, layout: bpy.types.UILayout):
@@ -99,19 +193,43 @@ class TRM_PT_ShaderSettings(bpy.types.Panel):
         layout.label(text="Material has no TRM Shader")
 
     def draw(self, context):
-        layout = self.layout
+        layout: bpy.types.UILayout = self.layout
         layout.use_property_decorate = False
         layout.use_property_split = True
         col = layout.column(align=False)
         
         obj = context.active_object
-        shadernode = find_TRM_shader()
+        mat = obj.active_material
+        shadernode = find_TRM_shader_ntree()
         if shadernode:
-            inst_node = find_TRM_shader_inst(obj.active_material)
+            inst_node = find_TRM_shader_node(mat)
             if inst_node:
-                for input in inst_node.inputs:
-                    if not input.links:
-                        col.prop(input, 'default_value', text=input.name)
+                op = col.operator(ops.TRM_OT_CreateShader.bl_idname, text="Swap Shader Instance")
+                op.new_instance = False
+                op = col.operator(ops.TRM_OT_CreateShader.bl_idname, text="Create New Shader Instance")
+                op.new_instance = True
+
+                # draw Shader Type enum and value preview
+                row = col.row()
+                row.prop(mat.trm_settings, 'type')
+                row = row.row()
+                row.prop(inst_node.inputs[0], 'default_value', text="Index:")
+                # direct access to value if chosen Shader Type is "Other"
+                if int(mat.trm_settings.type) != -1:
+                    row.enabled = False
+
+                # TODO: make some actual framework to draw different types based on Shader Type
+                if int(mat.trm_settings.type) == 3:
+                    col.prop(mat.trm_settings.data1, 'data_mat')
+                else:
+                    col.prop(mat.trm_settings.data1, 'data_color', text=SHADER_DATA_NAMES[1])
+                col.prop(mat.trm_settings.data2, 'data_color', text=SHADER_DATA_NAMES[2])
+                if int(mat.trm_settings.type) == 3:
+                    col.prop(mat.trm_settings.data3, 'data_float', text="Roughness")
+                else:
+                    col.prop(mat.trm_settings.data3, 'data_color', text=SHADER_DATA_NAMES[3])
+                col.prop(mat.trm_settings.data4, 'data_color', text=SHADER_DATA_NAMES[4])
+
             else:
                 self.draw_TRM_error(col)
                 col = layout.column(align=False)
@@ -123,6 +241,12 @@ class TRM_PT_ShaderSettings(bpy.types.Panel):
             self.draw_TRM_error(col)
             col = layout.column(align=False)
             col.operator(ops.TRM_OT_CreateShader.bl_idname)
+
+class TRM_PT_ShaderSettings_Cycles(bpy.types.Panel, TRM_PT_ShaderSettings):
+    bl_parent_id = "CYCLES_MATERIAL_PT_surface"
+
+class TRM_PT_ShaderSettings_Eevee(bpy.types.Panel, TRM_PT_ShaderSettings):
+    bl_parent_id = "EEVEE_MATERIAL_PT_surface"
 
 class TRM_PT_UvTools(bpy.types.Panel):
     bl_label = "TRM Tools"
@@ -144,10 +268,12 @@ class TRM_PT_UvTools(bpy.types.Panel):
         op = row.operator(ops.TRM_OT_UV_QuantizeVerts.bl_idname, text="All")
         op.only_selected = False
 
-
 cls =(
     TRM_PT_Preferences,
-    TRM_PT_ShaderSettings,
+    TRM_PG_ShaderDataPropTypes,
+    TRM_PG_ShaderSettings,
+    TRM_PT_ShaderSettings_Cycles,
+    TRM_PT_ShaderSettings_Eevee,
     TRM_PT_UvTools,
     ops.TRM_OT_CreateShader,
     ops.TRM_OT_UV_QuantizeVerts
@@ -157,12 +283,14 @@ _register, _unregister = bpy.utils.register_classes_factory(cls)
 
 def register():
     _register()
+    bpy.types.Material.trm_settings = bpy.props.PointerProperty(type=TRM_PG_ShaderSettings)
     trm_import.register()
     trm_export.register()
 
 def unregister():
     trm_export.unregister()
     trm_import.unregister()
+    del bpy.types.Material.trm_settings
     _unregister()
 
 if __name__ == "__main__":

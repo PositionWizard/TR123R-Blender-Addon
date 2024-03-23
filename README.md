@@ -1,4 +1,4 @@
-# TR123R-Blender-Addon v 0.6.0
+# TR123R-Blender-Addon v 0.6.1
 **[Blender 3.6/4.0](https://www.blender.org)** Import/Export addon for **[Tomb Raider I-III Remastered](https://store.steampowered.com/app/2478970)** game **.TRM** files.
 
 Addon originally started by [MuruCoder](https://github.com/MuruCoder) with my additions, other improvements and structure changes.

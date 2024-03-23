@@ -1,8 +1,7 @@
 # v0.5.1
 
-import bpy, math
+import bpy, math, bmesh, time
 from struct import pack
-import bmesh
 
 def normalFloat2Byte(x, y, z):
     length = math.sqrt((x * x) + (y * y) + (z * z))
@@ -12,6 +11,7 @@ def normalFloat2Byte(x, y, z):
         z = (z / length) * 126
         return (round(x + 127), round(y + 127), round(z + 127))
     return (127, 127, 127)
+
 
 from bpy_extras.io_utils import ExportHelper
 from bpy.props import StringProperty, BoolProperty, FloatProperty
@@ -52,7 +52,8 @@ class ExportTRMData(Operator, ExportHelper):
 
     apply_transforms: BoolProperty(
         name="Apply Transforms",
-        description="Apply object location, rotation and scale",
+        description="Apply object location, rotation and scale.\n"
+                    "Broken with parented objects!",
         default=True,
     )
  
@@ -80,10 +81,6 @@ class ExportTRMData(Operator, ExportHelper):
                 if mod.show_viewport:
                     bpy.ops.object.modifier_apply(modifier=mod.name)
 
-        if self.apply_transforms:
-            obj_c.data.transform(obj_c.matrix_world)
-            obj_c.data.update()
-
         # TRIANGULATE COPY
         bm = bmesh.new()
         bm.from_mesh(obj_c.data)
@@ -104,7 +101,8 @@ class ExportTRMData(Operator, ExportHelper):
                 self.prepare_mesh(obj_c)
                 obj_c.select_set(True)
         
-            bpy.ops.object.join()
+            if len(objs)>1:
+                bpy.ops.object.join()
         else:
             if not act_obj or act_obj.type != 'MESH':
                 self.report(err_call)
@@ -114,43 +112,52 @@ class ExportTRMData(Operator, ExportHelper):
             objs = [obj]
             
         trm = bpy.context.active_object
+        trm.data.calc_normals_split()
+        if trm.vertex_groups:
+            bpy.ops.object.vertex_group_normalize_all(group_select_mode='ALL', lock_active=False)
+
+        if self.apply_transforms:
+            trm.data.transform(trm.matrix_world)
+            trm.matrix_local.identity()
+            trm.data.update()
+
         result = {'PASS_THROUGH'}, trm, objs
         return result
     
     # VERTEX PACKER
-    def PackVertex(self, coordinate, normal, texture, groups, uv):
-        vx = -coordinate.x * self.scale
-        vy = -coordinate.z * self.scale
-        vz = -coordinate.y * self.scale
-        nr = normalFloat2Byte(-normal[0], -normal[1], -normal[2])
-        nx = nr[0]
-        ny = nr[2]
-        nz = nr[1]
+    def PackVertex(self, coordinate: list, normal, texture, groups, uv):
+        # negate and pack normals in XZY order
+        nrs = normalFloat2Byte(-normal[0], -normal[2], -normal[1])
+
+        # vertices in XZY order
+        vs = []
+        for i in [0, 2, 1]:
+            vs.append(-coordinate[i] * self.scale)
+            
+        # vertex groups and weights
+        gs, ws = [0, 0, 0], [255, 0, 0]
+        for i in range(3):
+            if len(groups) > i:
+                gr = groups[i].group
+                w = round(groups[i].weight * 255)
+            else:
+                gr, w = 0, 0
+            gs[i], ws[i] = gr, w
+
+        # texture and UV
         tex = texture + 1
         tu = round(uv[0] * 255)
         tv = 255 - round(uv[1] * 255)
-        g1 = 0
-        w1 = 255
-        g2 = 0
-        w2 = 0
-        g3 = 0
-        w3 = 0
-        if len(groups) > 0:
-            g1 = groups[0].group
-            w1 = round(groups[0].weight * 255)
-        if len(groups) > 1:
-            g2 = groups[1].group
-            w2 = round(groups[1].weight * 255)
-        if len(groups) > 2:
-            g3 = groups[2].group
-            w3 = round(groups[2].weight * 255)
-        return pack("<fff12B", vx,vy,vz, nx,ny,nz, tex, g1,g2,g3, tu, w1,w2,w3, tv)
+        return pack("<fff12B", *vs, *nrs, tex, *gs, tu, *ws, tv)
+    
+    def save_shader_data(self, shader_map, id=0, data = [0,0,0,0,0]):
+        shader_map[id] = {'pack': pack("<5I", *data)}
+        for st in trm_utils.SHADER_SUBTYPES:
+            shader_map[id][st] = []
+        
+        return shader_map
     
     def write_trm_data(self, context, trm_mesh: bpy.types.Mesh, filepath):
-        print("EXPORTING...")
-
-        trm_mesh.calc_normals_split()
-
         def uv_offset(x):
             if x > 0.0:
                 offset = -(math.ceil(x/1.0)-1)
@@ -164,34 +171,36 @@ class ExportTRMData(Operator, ExportHelper):
         mat_map = []
         mat_i = 0
         for mat in trm_mesh.materials:
-            mat_info = [None, trm_utils.SHADER_SUBTYPES[0], 0]
+            mat_info = {'ShaderID': 0,
+                        'ShaderSubtype': trm_utils.SHADER_SUBTYPES[0],
+                        'TexID': 8000}
             if mat:
                 # Material name structure = [TextureID, ShaderID, ShaderSubtype, ...]
                 mat_name_slice = mat.name.split('_')
                 tex_id = trm_utils.str_to_int(mat_name_slice[0])
                 if tex_id == None:
-                    tex_id = 8000
+                    tex_id = mat_info['TexID']
+                    self.report({'WARNING'}, f'"{mat_name_slice[0]}" in material name is not a texture ID! Falling back to default: "{tex_id}"')
                 # Get correct material slot indices without duplicates for same textures (shader support)
-                # if tex_id not in tex_map.keys():
-                #     tex_map[tex_id] = mat_i
                 if tex_id in textures:
-                    mat_info[2] = textures.index(tex_id)
+                    mat_info['TexID'] = textures.index(tex_id)
                 else:
-                    mat_info[2] = len(textures)
+                    mat_info['TexID'] = len(textures)
                     textures.append(tex_id)
 
                 # Get Shader info from materials, skipping cubemaps (they don't have it)
                 if len(mat_name_slice)>1:
                     sh_ID = trm_utils.str_to_int(mat_name_slice[1])
                     if sh_ID == None or not 0 <= sh_ID <= 0xffff:
+                        self.report({'WARNING'}, f'"{mat_name_slice[1]}" in material name is not a Shader Instance number! Falling back to default: "{mat_info["ShaderID"]}"')
                         mat_map.append(mat_info)
                         mat_i += 1
                         continue
 
                     if len(mat_name_slice)>2 and mat_name_slice[2] in trm_utils.SHADER_SUBTYPES:
-                        mat_info[1] = mat_name_slice[2]
+                        mat_info['ShaderSubtype'] = mat_name_slice[2]
 
-                    shadernode_inst = trm_utils.find_TRM_shader_inst(mat)
+                    shadernode_inst = trm_utils.find_TRM_shader_node(mat)
                     if shadernode_inst:           
                         sh_data = []
                         # get all shader data values into a list
@@ -203,17 +212,18 @@ class ExportTRMData(Operator, ExportHelper):
 
                         if sh_ID not in shader_map.keys():
                             # create a map of shader and index lists for every shader subtype
-                            print(sh_data)
-                            shader_map[sh_ID] = {'pack': pack("<5I", *sh_data)}
-                            for st in trm_utils.SHADER_SUBTYPES:
-                                shader_map[sh_ID][st] = []
+                            shader_map = self.save_shader_data(shader_map, sh_ID, sh_data)
 
-                        # shader_map[sh_ID] = {'pack': pack("<5I", sh_type, sh_data1, sh_data2, sh_data3, sh_data4), 'indicesA': [], 'indicesB': [], 'indicesC': []}
-
-                    mat_info[0] = sh_ID
+                    mat_info['ShaderID'] = sh_ID
+                else:
+                    self.report({'WARNING'}, f'"{mat.name}" material has no Shader definitions ([texID]_[shaderID]_["B"/"C"]), falling back to default..."')
                 
             mat_map.append(mat_info)
             mat_i += 1
+
+        # fallback to a default shader
+        if not shader_map:
+            shader_map = self.save_shader_data(shader_map)
 
         # PREPARE INDICES & VERTICES DATA
         vertices = []
@@ -224,11 +234,6 @@ class ExportTRMData(Operator, ExportHelper):
         uv_err_occured = False
         for p in trm_mesh.polygons:
             mat_info = mat_map[p.material_index]
-            sh_ID = mat_info[0]
-            sh_subtype = mat_info[1]
-            tex_id = mat_info[2]
-            # tex_id = trm_mesh.materials[p.material_index].name.split('_', 1)[0]
-            # mat_index = tex_map[tex_id]
             for i in v_order:
                 loop = trm_mesh.loops[p.loop_indices[i]]
                 groups = trm_mesh.vertices[loop.vertex_index].groups
@@ -250,20 +255,17 @@ class ExportTRMData(Operator, ExportHelper):
                 vertex = self.PackVertex(
                     trm_mesh.vertices[loop.vertex_index].co,
                     loop.normal,
-                    tex_id,
+                    mat_info['TexID'],
                     groups,
                     uv
                 )
-                indices = shader_map[sh_ID][sh_subtype]
+                indices = shader_map[mat_info['ShaderID']][mat_info['ShaderSubtype']]
                 if vertex in vertices:
                     indices.append(vertices.index(vertex))
                 else:
                     indices.append(num_vertices)
                     vertices.append(vertex)
                     num_vertices += 1
-
-            # Define Shaders
-            
 
         # GET ELEMENT COUNTS
         num_textures = len(textures)
@@ -317,24 +319,35 @@ class ExportTRMData(Operator, ExportHelper):
         f.close()
         print("%d Textures, %d Indices, %d Vertices" % (num_textures, num_indices, num_vertices))
         print("DONE!")
-        self.report({'INFO'}, "Export Completed.")
 
         return {'FINISHED'}
     
     def execute(self, context):
+        start_time = time.process_time()
+        self.report({'INFO'}, "Exporting TRM...%r" % self.filepath)
+
         active_obj = bpy.context.active_object
         selected_objs = bpy.context.selected_objects
 
+        
         result, trm, obj_copies = self.get_trm(active_obj, selected_objs)
         if result == {'CANCELLED'}:
             return result
 
-        result = self.write_trm_data(context, trm.data, self.filepath)
+        try:
+            result = self.write_trm_data(context, trm.data, self.filepath)
+        except:
+            result = {'CANCELLED'}
+
         self.clean_copies(obj_copies)
 
         for ob in selected_objs:
             ob.select_set(True)
         bpy.context.view_layer.objects.active = active_obj
+
+        end_time = time.process_time() - start_time
+        if result == {'FINISHED'}:
+            self.report({'INFO'}, "Export finished in %.4f sec." % (end_time))
         return result
 
 def menu_func_export(self, context):
