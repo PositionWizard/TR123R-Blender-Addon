@@ -3,7 +3,7 @@ bl_info = {
     "author" : "MuruCoder, MaRaider, Czarpos",
     "description" : "Import/Export tool for .TRM files for Tomb Raider Remastered I-III games.",
     "blender" : (4, 0, 0),
-    "version" : (0, 4, 1),
+    "version" : (0, 6, 0),
     "category": "Import-Export",
 	"location": "File > Import/Export",
     "warning" : "Game uses DDS textures, must be handled separately.",
@@ -11,15 +11,21 @@ bl_info = {
     "tracker_url": "https://www.tombraiderforums.com/showthread.php?t=228896"
 }
 
+# Reload previously loaded modules
 if "bpy" in locals():
     from importlib import reload
+    if "utils" in locals():
+        reload(utils)
     if "trm_import" in locals():
         reload(trm_import)
     if "trm_export" in locals():
         reload(trm_export)
+    if "ops" in locals():
+        reload(ops)
     del reload
 
-from . import trm_import, trm_export
+from .utils import find_TRM_shader, find_TRM_shader_inst
+from . import trm_import, trm_export, ops
 import bpy, os
 
 def make_paths_abs(key):
@@ -31,7 +37,7 @@ def make_paths_abs(key):
     if key in prefs and prefs[key].startswith('//'):
         prefs[key] = sane_path(prefs[key])
 
-class PT_TRM_Preferences(bpy.types.AddonPreferences):
+class TRM_PT_Preferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
     dds_tool_filepath: bpy.props.StringProperty(
@@ -75,16 +81,89 @@ class PT_TRM_Preferences(bpy.types.AddonPreferences):
         op = row.operator('wm.url_open', text=" Microsoft's GitHub Releases")
         op.url = "https://github.com/microsoft/DirectXTex/releases"
 
+class TRM_PT_ShaderSettings(bpy.types.Panel):
+    bl_label = "TRM Shader Settings"
+    bl_space_type = "PROPERTIES"
+    bl_region_type = "WINDOW"
+    bl_context = "material"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        obj = context.active_object
+        # result = self.get_main_shader(self, obj)
+        return obj and obj.type == 'MESH' and obj.active_material
+    
+    def draw_TRM_error(self, layout: bpy.types.UILayout):
+        layout.alert = True
+        layout.label(text="Material has no TRM Shader")
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_decorate = False
+        layout.use_property_split = True
+        col = layout.column(align=False)
+        
+        obj = context.active_object
+        shadernode = find_TRM_shader()
+        if shadernode:
+            inst_node = find_TRM_shader_inst(obj.active_material)
+            if inst_node:
+                for input in inst_node.inputs:
+                    if not input.links:
+                        col.prop(input, 'default_value', text=input.name)
+            else:
+                self.draw_TRM_error(col)
+                col = layout.column(align=False)
+                op = col.operator(ops.TRM_OT_CreateShader.bl_idname, text="Add Existing Shader Instance")
+                op.new_instance = False
+                op = col.operator(ops.TRM_OT_CreateShader.bl_idname, text="Create New Shader Instance")
+                op.new_instance = True
+        else:
+            self.draw_TRM_error(col)
+            col = layout.column(align=False)
+            col.operator(ops.TRM_OT_CreateShader.bl_idname)
+
+class TRM_PT_UvTools(bpy.types.Panel):
+    bl_label = "TRM Tools"
+    bl_space_type = "IMAGE_EDITOR"
+    bl_region_type = "UI"
+    bl_category = "Tool"
+
+    @classmethod
+    def poll(cls, context):
+        return context.mode == 'EDIT_MESH'
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text=ops.TRM_OT_UV_QuantizeVerts.bl_label)
+        col = layout.column()
+        row = col.row(align=True)
+        op = row.operator(ops.TRM_OT_UV_QuantizeVerts.bl_idname, text="Selection")
+        op.only_selected = True
+        op = row.operator(ops.TRM_OT_UV_QuantizeVerts.bl_idname, text="All")
+        op.only_selected = False
+
+
+cls =(
+    TRM_PT_Preferences,
+    TRM_PT_ShaderSettings,
+    TRM_PT_UvTools,
+    ops.TRM_OT_CreateShader,
+    ops.TRM_OT_UV_QuantizeVerts
+)
+
+_register, _unregister = bpy.utils.register_classes_factory(cls)
 
 def register():
-    bpy.utils.register_class(PT_TRM_Preferences)
+    _register()
     trm_import.register()
     trm_export.register()
 
 def unregister():
     trm_export.unregister()
     trm_import.unregister()
-    bpy.utils.unregister_class(PT_TRM_Preferences)
+    _unregister()
 
 if __name__ == "__main__":
     register()
