@@ -1,9 +1,6 @@
-import bpy
+import bpy, math, random, subprocess, time
 from struct import unpack
-import math
-import random
 import os.path as Path
-import subprocess
 from . import trm_parse
 from . import utils as trm_utils
 
@@ -136,6 +133,8 @@ class ImportTRMData(Operator, ImportHelper):
         default=True
     )
 
+    skip_texconv = False
+
     def load_png(self, mat: bpy.types.Material, path_png, nodes: bpy.types.Nodes):
         texture_node = nodes.new('ShaderNodeTexImage')
         texture_node.image = bpy.data.images.load(path_png)
@@ -165,13 +164,12 @@ class ImportTRMData(Operator, ImportHelper):
                 print(f"PNG located in: {path_png}")
                 tex_node = self.load_png(mat, path_png, nodes)
                 break
+            elif self.skip_texconv:
+                break
             # Convert DDS to PNG, if the DDS exists but not the PNG
             elif Path.exists(path_dds):
                 print(f"DDS located in: {path_dds}")
-                if not Path.exists(tex_conv_path) or not tex_conv_path.endswith('.exe'):
-                    self.report({'WARNING'}, f'Wrong DDS Converter path or file type: "{tex_conv_path}", skipping texture import...')
-                    break
-                
+
                 # Create PNGs folder into "Tombraider Remastered Trilogy\[1,2,3]\TEX\" or other directory specified in prefs
                 if not Path.exists(path_png_dir):
                     print(f"{path_png_dir} does not exists, creating...")
@@ -181,28 +179,29 @@ class ImportTRMData(Operator, ImportHelper):
                 tex_node = self.load_png(mat, path_png, nodes)
                 break
             else:
-                self.report({'WARNING'}, f"No texture found in Game [{game_id}] folder. trying next game...")
+                self.report({'INFO'}, f"Texture '{tex_name}' not found in Game [{game_id}] folder!")
 
         if not tex_node:
-            self.report({'WARNING'}, f"No DDS or PNG texture found for '{tex_name}'! skipping texture import...")
+            self.report({'WARNING'}, f"Couldn't get texture '{tex_name}'! skipping texture import...")
 
         return tex_node
     
-    def get_tex(self, tex_name:str, mat:bpy.types.Material, folders:str, addon_prefs):
-        nodes = mat.node_tree.nodes
+    def get_tex(self, tex_name:str, mat:bpy.types.Material):
         texture_node = None
         tex = None
-        
-        # look for shader nodes with the texture
-        for node in nodes:
-            if node.type == 'TEX_IMAGE':
-                node: bpy.types.ShaderNodeTexImage
-                if node.image.name.startswith(tex_name) and Path.exists(node.image.filepath):
-                    self.report({'INFO'}, f'Node with "{tex_name}" texture already exists, assigning...')
-                    node.image.reload()
-                    texture_node = node
-                    tex = node.image
-                    break
+
+        if mat.use_nodes:        
+            # look for shader nodes with the texture
+            nodes = mat.node_tree.nodes
+            for node in nodes:
+                if node.type == 'TEX_IMAGE':
+                    node: bpy.types.ShaderNodeTexImage
+                    if node.image.name.startswith(tex_name) and Path.exists(node.image.filepath):
+                        self.report({'INFO'}, f'Node with "{tex_name}" texture already exists, assigning...')
+                        node.image.reload()
+                        texture_node = node
+                        tex = node.image
+                        break
 
         if not texture_node:
             # look for the texture itself
@@ -226,42 +225,49 @@ class ImportTRMData(Operator, ImportHelper):
                     
         mat_name = tex_name+mat_suffix
 
-        if mat_name in bpy.data.materials:
-            print(f'Material "{mat_name}" already exists, using the existing one for this model.') 
-            mat = bpy.data.materials.get(mat_name)
-        else:
+        for n in [mat_name, tex_name]:
+            mat = bpy.data.materials.get(n)
+            if mat:
+                print(f'Material "{mat.name}" already exists, using the existing one for this model.') 
+                return mat
+
+        if not mat:
             mat = bpy.data.materials.new(name=mat_name)
             mat.diffuse_color = (random.random(), random.random(), random.random(), 1)
-
+            
         return mat
     
-    def define_shader(self, index: int, type_name: str, sh_ids: trm_utils.TRM_ShaderIndices, trm_mesh: bpy.types.Mesh, is_single, has_tex):
+    def define_shader(self, index: int, type_name: str, sh_ids: trm_utils.TRM_ShaderIndices, trm_mesh: bpy.types.Mesh, is_single, has_gameID):
         def copy_mat(tex_name, mat_suffix, mat: bpy.types.Material):
             # Don't tag and duplicate the material with shader name if
             # it's from the first range of indices
+            mat_newname = tex_name
             if type_name == trm_utils.SHADER_SUBTYPES[0]:
-                tex_name += f'_{index}'
+                mat_newname += f'_{index}'
             else:
-                tex_name += f'_{index}_{type_name}'
+                mat_newname += f'_{index}_{type_name}'
             
             if mat_suffix:
-                tex_name += f'_{mat_suffix}'
+                mat_newname += f'_{mat_suffix}'
+
+            mat_basename = tex_name+f'_{mat_suffix}' if has_gameID else tex_name
 
             # swap imported material in the same slot, with correct one still in memory
-            swap_mats = type_name == trm_utils.SHADER_SUBTYPES[0] or is_single
-            if tex_name in bpy.data.materials:
+            swap_mats = mat.name == mat_basename or mat.name == mat_newname
+            if mat_newname in bpy.data.materials:
                 if swap_mats:
                     prev_mat_id = trm_mesh.materials.find(mat.name)
-                    mat = bpy.data.materials.get(tex_name)
+                    bpy.data.materials.remove(mat)
+                    mat = bpy.data.materials.get(mat_newname)
                     trm_mesh.materials[prev_mat_id] = mat
                 else:
-                    mat = bpy.data.materials.get(tex_name)
+                    mat = bpy.data.materials.get(mat_newname)
                     trm_mesh.materials.append(mat)
             else:
                 if not swap_mats:
                     mat = mat.copy()
                     trm_mesh.materials.append(mat)
-                mat.name = tex_name
+                mat.name = mat_newname
             return mat
         
         poly_start = int(sh_ids.offset/3)
@@ -269,22 +275,22 @@ class ImportTRMData(Operator, ImportHelper):
         added_mats = {}
         # Find polygons in the given shader indices range and either rename
         # or duplicate their exisitng materials, tagging them with shader index and subtype
-        for p in trm_mesh.polygons:
-            if poly_start <= p.index < poly_stop:
-                mat = trm_mesh.materials[p.material_index]
-                mat_name_slice = mat.name.split('_')
-                tex_name, mat_suffix = [mat_name_slice[0], mat_name_slice[-1] if len(mat_name_slice)>1 and has_tex else ""]
-                # Save the operation in memory to avoid excess material duplication
-                if tex_name in added_mats.keys():
-                    mat = added_mats[tex_name]
-                else:
-                    mat = copy_mat(tex_name, mat_suffix, mat)
-                    added_mats[tex_name] = mat
-                p.material_index = trm_mesh.materials.find(mat.name)
+        for p in trm_mesh.polygons[poly_start:poly_stop]:
+            mat = trm_mesh.materials[p.material_index]
+            mat_name_slice = mat.name.split('_',4)
+            tex_name, mat_suffix = [mat_name_slice[0], mat_name_slice[-1] if len(mat_name_slice)>1 and has_gameID else ""]
+            tex_sh = f'{tex_name}_{index}'
+            # Save the operation in memory to avoid excess material duplication
+            if tex_sh in added_mats.keys():
+                mat = added_mats[tex_sh]
+            else:
+                mat = copy_mat(tex_name, mat_suffix, mat)
+                added_mats[tex_sh] = mat
+            p.material_index = trm_mesh.materials.find(mat.name)
 
         return added_mats.values()
 
-    def setup_materials(self, shader_inst: bpy.types.ShaderNodeTree, type_name: str, mats: list[bpy.types.Material], folders, addon_prefs):
+    def setup_materials(self, shader_inst: bpy.types.ShaderNodeTree, type_name: str, trm_mesh, mats: list[bpy.types.Material], folders, addon_prefs):
         for mat in mats:
             mat.use_nodes = True
             nodes = mat.node_tree.nodes
@@ -295,15 +301,18 @@ class ImportTRMData(Operator, ImportHelper):
                 nodes.clear()
                 mat_output = nodes.new('ShaderNodeOutputMaterial')
                 # Link the shader instance to every material of this shader
-                shader_inst_node = trm_utils.create_TRM_shader_inst_nodegroup(nodes, shader_inst)
+                shader_inst_node = trm_utils.create_TRM_shader_inst_node(nodes, shader_inst)
                 nodes_to_align = [shader_inst_node, mat_output]
 
                 trm_utils.connect_nodes(mat.node_tree, mat_output, 'Surface', shader_inst_node, 'Shader')     
 
+            # setup material's TRM UI settings from shader
+            trm_utils.set_mat_TRM_settings(mat, shader_inst_node, trm_mesh)
+
             # Get or import texture and link it to shader instance
             if self.use_tex:
                 tex_name = mat.name.split('_', 1)[0]
-                tex_node, tex = self.get_tex(tex_name, mat, folders, addon_prefs)
+                tex_node, tex = self.get_tex(tex_name, mat)
                 if not tex_node:
                     if tex:
                         tex_node = nodes.new('ShaderNodeTexImage')
@@ -311,8 +320,9 @@ class ImportTRMData(Operator, ImportHelper):
                     else:
                         tex_node = self.import_texture(addon_prefs, tex_name, folders, mat, nodes)
 
-                nodes_to_align.insert(0, tex_node)
-                trm_utils.connect_nodes(mat.node_tree, shader_inst_node, 'Base Color', tex_node, 0)
+                if tex_node:
+                    nodes_to_align.insert(0, tex_node)
+                    trm_utils.connect_nodes(mat.node_tree, shader_inst_node, 'Base Color', tex_node, 0)
 
             if type_name == trm_utils.SHADER_SUBTYPES[2]:
                 mat.blend_method = "BLEND"
@@ -351,7 +361,7 @@ class ImportTRMData(Operator, ImportHelper):
                 sh_ids_list.append(trm_utils.TRM_ShaderIndices(sh_ids[0], sh_ids[1]))
             shader = trm_utils.TRM_Shader(sh_type, sh_uks[0], sh_uks[1], sh_uks[2], sh_uks[3], sh_ids_list[0], sh_ids_list[1], sh_ids_list[2])
             shaders.append(shader)
-            print(f"Shader[{n}]: {shader}\n")
+            # print(f"Shader[{n}]: {shader}\n")
 
         # TEXTURES
         num_textures = trm_parse.read_uint32(f)
@@ -445,21 +455,35 @@ class ImportTRMData(Operator, ImportHelper):
         for p in trm_mesh.polygons:
             p.material_index = vertices[p.vertices[1]][6] - 1
 
-        shader_node_master = trm_utils.get_TRM_shader()
+        # DEFINE SHADERS
+        mat_shaders = set()
+        shader_node_master = trm_utils.get_TRM_shader_ntree()
         for i, sh in enumerate(shaders):
             is_single_shader = num_shaders == 1
-            shader_inst_node = trm_utils.get_TRM_shader_inst(shader_node_master, trm.name, sh, i)
+            shader_inst_node = trm_utils.get_TRM_shader_inst_ntree(shader_node_master, filename, sh, i)
             if sh.indices1.length > 0:
                 mats = self.define_shader(i, trm_utils.SHADER_SUBTYPES[0], sh.indices1, trm_mesh, is_single_shader, self.use_tex)
-                self.setup_materials(shader_inst_node, trm_utils.SHADER_SUBTYPES[0], mats, folders, addon_prefs)
+                self.setup_materials(shader_inst_node, trm_utils.SHADER_SUBTYPES[0], trm_mesh, mats, folders, addon_prefs)
+                mat_shaders.update(mats)
                 is_single_shader = False
             if sh.indices2.length > 0:
                 mats = self.define_shader(i, trm_utils.SHADER_SUBTYPES[1], sh.indices2, trm_mesh, is_single_shader, self.use_tex)
-                self.setup_materials(shader_inst_node, trm_utils.SHADER_SUBTYPES[1], mats, folders, addon_prefs)
+                self.setup_materials(shader_inst_node, trm_utils.SHADER_SUBTYPES[1], trm_mesh, mats, folders, addon_prefs)
+                mat_shaders.update(mats)
                 is_single_shader = False
             if sh.indices3.length > 0:
                 mats = self.define_shader(i, trm_utils.SHADER_SUBTYPES[2], sh.indices3, trm_mesh, is_single_shader, self.use_tex)
-                self.setup_materials(shader_inst_node, trm_utils.SHADER_SUBTYPES[2], mats, folders, addon_prefs)
+                self.setup_materials(shader_inst_node, trm_utils.SHADER_SUBTYPES[2], trm_mesh, mats, folders, addon_prefs)
+                mat_shaders.update(mats)
+        
+        # CUBEMAPS
+        for mat in trm_mesh.materials:
+            if mat not in mat_shaders and self.use_tex:
+                tex_name = mat.name.split('_', 1)[0]
+                tex = self.get_tex(tex_name, mat)[1]
+                if not tex:
+                    mat.use_nodes = True
+                    self.import_texture(addon_prefs, tex_name, folders, mat, mat.node_tree.nodes)
 
         # CREATE UV DATA
         trm_mesh.uv_layers.new()
@@ -528,16 +552,29 @@ class ImportTRMData(Operator, ImportHelper):
         bpy.context.collection.objects.link(trm)
 
         print("DONE!")
-        self.report({'INFO'}, "Import Completed.")
-
         return {'FINISHED'}
 
     def execute(self, context):
+        start_time = time.process_time()
+        if len(self.files) == 1:
+            self.report({'INFO'}, "Importing TRM...%r" % self.filepath)
+        else:
+            self.report({'INFO'}, "Importing TRM files...")
+
         addon_prefs = bpy.context.preferences.addons[__package__].preferences
+        texconv_path = addon_prefs.dds_tool_filepath
+        if self.use_tex and (not Path.exists(texconv_path) or not texconv_path.endswith('.exe')):
+            self.report({'WARNING'}, f'Wrong DDS Converter path or file type: "{texconv_path}", skipping texture conversion...')
+            self.skip_texconv = True
+
         for f in self.files:
             filepath = Path.join(self.directory, f.name)
             obj_name = str(f.name).removesuffix(self.filename_ext)
             result = self.read_trm_data(context, filepath, addon_prefs, obj_name)
+
+        end_time = time.process_time() - start_time
+        if result != {'CANCELLED'}:
+            self.report({'INFO'}, "Import finished in %.4f sec." % (end_time))
         return result
     
     def draw_warning(self, layout: bpy.types.UILayout, msg: str):
