@@ -1,6 +1,6 @@
 # v0.5.1
 
-import bpy, math, bmesh, time
+import bpy, math, bmesh, time, os
 from struct import pack
 
 def normalFloat2Byte(x, y, z):
@@ -16,18 +16,18 @@ def normalFloat2Byte(x, y, z):
 from bpy_extras.io_utils import ExportHelper
 from bpy.props import StringProperty, BoolProperty, FloatProperty
 from bpy.types import Operator
-from mathutils import Vector, Matrix
 from . import utils as trm_utils
+from .trm_parse import TRM_HEADER, TRM_FORMAT, TRM_ANIM_FORMAT
 
-class ExportTRMData(Operator, ExportHelper):
+class TRM_OT_ExportTRM(Operator, ExportHelper):
     """Save object as TRM file"""
     bl_idname = "io_tombraider123r.trm_export"
     bl_label = "Export TRM"
 
-    filename_ext = ".TRM"
+    filename_ext = f"{TRM_FORMAT}"
 
     filter_glob: StringProperty(
-        default="*.TRM",
+        default=f"*{TRM_FORMAT}",
         options={'HIDDEN'},
         maxlen=255,
     )
@@ -52,9 +52,16 @@ class ExportTRMData(Operator, ExportHelper):
 
     apply_transforms: BoolProperty(
         name="Apply Transforms",
-        description="Apply object location, rotation and scale.\n"
+        description="Apply object location, rotation and scale.\n\n"
                     "Broken with parented objects!",
         default=True,
+    )
+
+    export_anim: BoolProperty(
+        name="Export Animated",
+        description=f"Export face animation data using a path to '{TRM_ANIM_FORMAT}' file.\n\n"
+                    f"Use only with {TRM_FORMAT} files that have extracted this data!!!",
+        default=False,
     )
  
     def copy_object(self, obj: bpy.types.Object):
@@ -140,15 +147,20 @@ class ExportTRMData(Operator, ExportHelper):
             if len(groups) > i:
                 gr = groups[i].group
                 w = round(groups[i].weight * 255)
-            else:
-                gr, w = 0, 0
-            gs[i], ws[i] = gr, w
+                gs[i], ws[i] = gr, w
 
         # texture and UV
         tex = texture + 1
         tu = round(uv[0] * 255)
         tv = 255 - round(uv[1] * 255)
         return pack("<fff12B", *vs, *nrs, tex, *gs, tu, *ws, tv)
+    
+    def uv_offset(self, x):
+        if x > 0.0:
+            offset = -(math.ceil(x/1.0)-1)
+        else:
+            offset = -math.floor(x/1.0)
+        return x+offset
     
     def save_shader_data(self, shader_map, id=0, data = [0,0,0,0,0]):
         shader_map[id] = {'pack': pack("<5I", *data)}
@@ -157,15 +169,9 @@ class ExportTRMData(Operator, ExportHelper):
         
         return shader_map
     
-    def write_trm_data(self, context, trm_mesh: bpy.types.Mesh, filepath):
-        def uv_offset(x):
-            if x > 0.0:
-                offset = -(math.ceil(x/1.0)-1)
-            else:
-                offset = -math.floor(x/1.0)
-            return x+offset
+    def write_trm_data(self, context, trm: bpy.types.Object, filepath):
+        trm_mesh: bpy.types.Mesh = trm.data
 
-        # tex_map = {}
         textures = []
         shader_map = {}
         mat_map = []
@@ -249,8 +255,8 @@ class ExportTRMData(Operator, ExportHelper):
                     uv_err_occured = True
 
                 # offset UVs if they're beyond [0.0, 1.0] range
-                uv[0] = uv_offset(uv[0]) if uv_out_U else uv[0]
-                uv[1] = uv_offset(uv[1]) if uv_out_V else uv[1]
+                uv[0] = self.uv_offset(uv[0]) if uv_out_U else uv[0]
+                uv[1] = self.uv_offset(uv[1]) if uv_out_V else uv[1]
   
                 vertex = self.PackVertex(
                     trm_mesh.vertices[loop.vertex_index].co,
@@ -274,7 +280,7 @@ class ExportTRMData(Operator, ExportHelper):
         f = open(filepath, 'wb')
 
         # TRM\x02 marker
-        f.write(pack(">I", 0x54524d02))
+        f.write(pack(">I", TRM_HEADER))
 
         # SHADER DATA
         indices = []
@@ -300,8 +306,85 @@ class ExportTRMData(Operator, ExportHelper):
         # BYTE ALIGN
         while f.tell() % 4: f.write(b"\x00")
 
-        # JOINTS (CURRENTLY UNKNOWN)
-        f.write(pack("<I", 0))
+        # BONE ANIM DATA INJECTION
+        num_anim_bones = 0
+        if self.export_anim:
+            filepath_split = self.filepath.rsplit('\\', 1)
+            filename = filepath_split[-1].removesuffix(self.filename_ext)
+            # print(f'Directory: {filepath_split[0]}\\')
+            # print(f'Filename: {filename}')
+            trm_anim_filepath = f'{filepath_split[0]}\\{filename}{TRM_ANIM_FORMAT}'
+            # print(trm_anim_filepath)
+            if os.path.exists(trm_anim_filepath):
+                print("-------------------------------------------------")
+                print(f'INJECTING ANIM DATA FROM "{trm_anim_filepath}" FILE...')
+                from . import trm_parse
+                with open(trm_anim_filepath, 'rb') as f_anim:
+                    # check for TRM\x02 marker
+                    if trm_parse.is_TRM_header(f_anim):
+                        num_anim_bones = trm_parse.read_uint32(f_anim)
+                        if num_anim_bones > 0:
+                            anim_bones = tuple(trm_parse.read_float_tuple(f_anim, 12) for n in range(num_anim_bones))
+                                
+                            num_anim_unknown2 = trm_parse.read_uint32(f_anim)
+                            anim_unknown2 = tuple(trm_parse.read_uint32_tuple(f_anim, 2) for n in range(num_anim_unknown2))
+                            
+                            num_anim_unknown3 = trm_parse.read_uint32(f_anim)
+                            anim_unknown3 = trm_parse.read_uint32_tuple(f_anim, num_anim_unknown3) # Frame numbers?
+                            
+                            num_anim_unknown4 = trm_parse.read_ushort16(f_anim)
+                            num_anim_unknown5 = trm_parse.read_ushort16(f_anim)  # this is unused, still unknown
+                            anim_unknown4 = tuple(trm_parse.read_float_tuple(f_anim, 12) for n in range(num_anim_unknown3 * num_anim_unknown4))
+
+                            f.write(pack("<I", num_anim_bones))
+                            f.write(pack("<%df" % (12*num_anim_bones), *[x for y in anim_bones for x in y]))
+                            f.write(pack("<I", num_anim_unknown2))
+                            f.write(pack("<%dI" % (2*num_anim_unknown2), *[x for y in anim_unknown2 for x in y]))
+                            f.write(pack("<I", num_anim_unknown3))
+                            f.write(pack("<%dI" % num_anim_unknown3, *anim_unknown3))
+                            f.write(pack("<H", num_anim_unknown4))
+                            f.write(pack("<H", num_anim_unknown5))
+                            f.write(pack("<%df" % (12*num_anim_unknown3 * num_anim_unknown4), *[x for y in anim_unknown4 for x in y]))
+
+                            # DEBUG
+                            if False:
+                                print(f'Bone amount: {num_anim_bones}')
+                                n = 0
+                                if n > -1:
+                                    print(f'Bone data at [{n}]: {anim_bones[n]}')
+                                else:
+                                    print(f'Bone data: {anim_bones}')
+
+                                print(f'Animation Data2: {num_anim_unknown2}')
+                                n = -1
+                                if n > -1:
+                                    print(f'Unknown data 2 at [{n}]: {anim_unknown2[n]}')
+                                else:
+                                    print(f'Unknown data 2: {anim_unknown2}')
+
+                                print(f'Animation Data3: {num_anim_unknown3}')
+                                n = -1
+                                if n > -1:
+                                    print(f'Unknown data 3 at [{n}]: {anim_unknown3[n]}')
+                                else:
+                                    print(f'Unknown data 3: {anim_unknown3}')
+
+                                print(f'Animation Data4: {num_anim_unknown4}')
+                                print(f'Animation Data5: {num_anim_unknown5}')
+                                n = 0
+                                if n > -1:
+                                    print(f'Unknown data 4 at [{n}]: {anim_unknown4[n]}')
+                                else:
+                                    print(f'Unknown data 4: {anim_unknown4}')
+                    else:
+                        self.report({'ERROR'}, f'"{filename}{TRM_ANIM_FORMAT}" file is not a {TRM_ANIM_FORMAT} file! Skipping anim data...')
+                del trm_parse
+            else:
+                self.report({'WARNING'}, f'{TRM_ANIM_FORMAT} file not found at "{trm_anim_filepath}"! Skipping anim data...')
+
+        # BONE ANIM DATA FALLBACK (CURRENTLY UNKNOWN)
+        if num_anim_bones == 0:
+            f.write(pack("<I", 0))
 
         # INDICE & VERTICE COUNTS
         f.write(pack("<2I", num_indices, num_vertices))
@@ -317,7 +400,7 @@ class ExportTRMData(Operator, ExportHelper):
             f.write(v)
 
         f.close()
-        print("%d Textures, %d Indices, %d Vertices" % (num_textures, num_indices, num_vertices))
+        print("%d Textures, %d Indices, %d Vertices, %d Bones" % (num_textures, num_indices, num_vertices, len(trm.vertex_groups)))
         print("DONE!")
 
         return {'FINISHED'}
@@ -335,7 +418,7 @@ class ExportTRMData(Operator, ExportHelper):
             return result
 
         try:
-            result = self.write_trm_data(context, trm.data, self.filepath)
+            result = self.write_trm_data(context, trm, self.filepath)
         except:
             result = {'CANCELLED'}
 
@@ -350,13 +433,16 @@ class ExportTRMData(Operator, ExportHelper):
             self.report({'INFO'}, "Export finished in %.4f sec." % (end_time))
         return result
 
+def executre(self, context):
+    return {'FINISHED'}
+
 def menu_func_export(self, context):
-    self.layout.operator(ExportTRMData.bl_idname, text="Tomb Raider I-III Remastered (.TRM)")
+    self.layout.operator(TRM_OT_ExportTRM.bl_idname, text=f"Tomb Raider I-III Remastered ({TRM_FORMAT})")
 
 def register():
-    bpy.utils.register_class(ExportTRMData)
+    bpy.utils.register_class(TRM_OT_ExportTRM)
     bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
 
 def unregister():
-    bpy.utils.unregister_class(ExportTRMData)
+    bpy.utils.unregister_class(TRM_OT_ExportTRM)
     bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
