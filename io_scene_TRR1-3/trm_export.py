@@ -1,5 +1,3 @@
-# v0.5.1
-
 import bpy, math, bmesh, time, os
 from struct import pack
 

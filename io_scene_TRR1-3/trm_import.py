@@ -22,7 +22,7 @@ def CreateVertexGroups(trm, joints, armature, filepath):
         "hair_root", "hair1", "hair2", "hair3", "hair4", "hair5", "hair6", "hair7", "hair8", "hair9",
         "EMPTY", "lip_pull_R",  "lip_pull_L", "lip_side_U_R", "lip_side_U_L", "lip_side_D_R", "lip_side_D_L", "lip_middle_U_R", "lip_middle_U_L", "lip_middle_D_R",
         "lip_middle_D_L", "eyelid_U_R", "eyelid_U_L", "eyelid_D_R", "eyelid_D_L", "brow_outer_R", "brow_outer_L", "brow_middle_R", "brow_middle_L", "brow_inner_R",
-        "brow_inner_L", "eye_R", "eye_L", "cheek_R", "cheek_L",
+        "brow_inner_L", "eye_R", "eye_L", "cheek_R", "cheek_L", "tongue",
         # more to be added here
     ]
 
@@ -30,7 +30,7 @@ def CreateVertexGroups(trm, joints, armature, filepath):
     vg_lists = {
         "Lara_Body": [1, 11, 14, 17, 21, 24, 27, 4, 42, 44, 47, 32, 34, 37, 6],
         "Lara_Hair": [50, 51, 52, 53, 54, 55],
-        "Lara_Head": [1, 4, 6, 60, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 7, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84],
+        "Lara_Head": [1, 4, 6, 60, 85, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 7, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84],
     }
 
     # map for list decision

@@ -3,7 +3,7 @@ bl_info = {
     "author" : "MuruCoder, MaRaider, Czarpos",
     "description" : "Import/Export tool for .TRM files for Tomb Raider Remastered I-III games.",
     "blender" : (4, 0, 0),
-    "version" : (0, 6, 2),
+    "version" : (0, 6, 3),
     "category": "Import-Export",
 	"location": "File > Import/Export",
     "warning" : "Game uses DDS textures, must be handled separately.",
@@ -16,6 +16,8 @@ if "bpy" in locals():
     from importlib import reload
     if "utils" in locals():
         reload(utils)
+    if "trm_parse" in locals():
+        reload(trm_parse)
     if "trm_import" in locals():
         reload(trm_import)
     if "trm_export" in locals():
@@ -24,8 +26,8 @@ if "bpy" in locals():
         reload(ops)
     del reload
 
-from .utils import find_TRM_shader_ntree, find_TRM_shader_node, SHADER_DATA_NAMES, convert_val_to_vector4, set_mat_TRM_settings
-from . import trm_import, trm_export, ops
+from . import utils
+from . import trm_parse, trm_import, trm_export, ops
 import bpy, os
 
 class TRM_PT_Preferences(bpy.types.AddonPreferences):
@@ -82,12 +84,13 @@ class TRM_PT_Preferences(bpy.types.AddonPreferences):
         op.url = "https://github.com/microsoft/DirectXTex/releases"
 
 def update_data_type(self, context, prop, data_type:str):
+    """Update displayed values in TRM shader UI panel"""
     obj = context.active_object
     if obj and obj.material_slots:
         mat = obj.active_material
-        shader_ntree = find_TRM_shader_ntree()
+        shader_ntree = utils.find_TRM_shader_ntree()
         if shader_ntree:
-            shader_node = find_TRM_shader_node(mat)
+            shader_node = utils.find_TRM_shader_node(mat)
             if shader_node:
                 data_path = self.path_from_id().split('.')[-1]
                 if data_path == 'trm_settings' and prop == 'type':
@@ -96,7 +99,7 @@ def update_data_type(self, context, prop, data_type:str):
                         return
                     input = shader_node.inputs.get(data_type)
                     input.default_value = val
-                    set_mat_TRM_settings(mat, mesh=obj.data, shader_node=shader_node, update_shadertype=False)
+                    utils.set_mat_TRM_settings(mat, mesh=obj.data, shader_node=shader_node, update_shadertype=False)
                 else:
                     data = getattr(mat.trm_settings, data_path)
                     data_name = mat.trm_settings.bl_rna.properties[data_path].name
@@ -105,7 +108,7 @@ def update_data_type(self, context, prop, data_type:str):
                     if data_type == 'mat' and val:
                         val = obj.data.materials.find(val.name)+1
                         data_type = 'float'
-                    val = convert_val_to_vector4(val, data_type)
+                    val = utils.convert_val_to_vector4(val, data_type)
                 
                     input = shader_node.inputs.get(data_name)
                     input.default_value = val
@@ -138,7 +141,7 @@ class TRM_PG_ShaderDataPropTypes(bpy.types.PropertyGroup):
 
 class TRM_PG_ShaderSettings(bpy.types.PropertyGroup):
     type: bpy.props.EnumProperty(
-        name=SHADER_DATA_NAMES[0],
+        name=utils.SHADER_DATA_NAMES[0],
         items=(
             ('0', 'Standard', "Standard diffuse shader without additional effects"),
             ('2', 'Unknown2', "???"),
@@ -151,27 +154,27 @@ class TRM_PG_ShaderSettings(bpy.types.PropertyGroup):
             ('-1', 'Other', "Custom value for experimenting")
         ),
         default='0',
-        update=lambda s,c: update_data_type(s,c, 'type', SHADER_DATA_NAMES[0])
+        update=lambda s,c: update_data_type(s,c, 'type', utils.SHADER_DATA_NAMES[0])
     )
 
     data1: bpy.props.PointerProperty(
         type=TRM_PG_ShaderDataPropTypes,
-        name=SHADER_DATA_NAMES[1],
+        name=utils.SHADER_DATA_NAMES[1],
     )
 
     data2: bpy.props.PointerProperty(
         type=TRM_PG_ShaderDataPropTypes,
-        name=SHADER_DATA_NAMES[2],
+        name=utils.SHADER_DATA_NAMES[2],
     )
 
     data3: bpy.props.PointerProperty(
         type=TRM_PG_ShaderDataPropTypes,
-        name=SHADER_DATA_NAMES[3],
+        name=utils.SHADER_DATA_NAMES[3],
     )
 
     data4: bpy.props.PointerProperty(
         type=TRM_PG_ShaderDataPropTypes,
-        name=SHADER_DATA_NAMES[4],
+        name=utils.SHADER_DATA_NAMES[4],
     )
 
 
@@ -200,9 +203,9 @@ class TRM_PT_ShaderSettings:
         
         obj = context.active_object
         mat = obj.active_material
-        shadernode = find_TRM_shader_ntree()
+        shadernode = utils.find_TRM_shader_ntree()
         if shadernode:
-            inst_node = find_TRM_shader_node(mat)
+            inst_node = utils.find_TRM_shader_node(mat)
             if inst_node:
                 op = col.operator(ops.TRM_OT_CreateShader.bl_idname, text="Swap Shader Instance")
                 op.new_instance = False
@@ -222,13 +225,13 @@ class TRM_PT_ShaderSettings:
                 if int(mat.trm_settings.type) == 3:
                     col.prop(mat.trm_settings.data1, 'data_mat')
                 else:
-                    col.prop(mat.trm_settings.data1, 'data_color', text=SHADER_DATA_NAMES[1])
-                col.prop(mat.trm_settings.data2, 'data_color', text=SHADER_DATA_NAMES[2])
+                    col.prop(mat.trm_settings.data1, 'data_color', text=utils.SHADER_DATA_NAMES[1])
+                col.prop(mat.trm_settings.data2, 'data_color', text=utils.SHADER_DATA_NAMES[2])
                 if int(mat.trm_settings.type) == 3:
                     col.prop(mat.trm_settings.data3, 'data_float', text="Roughness")
                 else:
-                    col.prop(mat.trm_settings.data3, 'data_color', text=SHADER_DATA_NAMES[3])
-                col.prop(mat.trm_settings.data4, 'data_color', text=SHADER_DATA_NAMES[4])
+                    col.prop(mat.trm_settings.data3, 'data_color', text=utils.SHADER_DATA_NAMES[3])
+                col.prop(mat.trm_settings.data4, 'data_color', text=utils.SHADER_DATA_NAMES[4])
 
             else:
                 self.draw_TRM_error(col)
