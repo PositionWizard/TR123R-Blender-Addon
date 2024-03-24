@@ -105,8 +105,11 @@ def update_data_type(self, context, prop, data_type:str):
                     data_name = mat.trm_settings.bl_rna.properties[data_path].name
                 
                     val = getattr(data, prop)
-                    if data_type == 'mat' and val:
-                        val = obj.data.materials.find(val.name)+1
+                    if data_type == 'mat':
+                        if val:
+                            val = obj.data.materials.find(val.name)+1
+                        else:
+                            val = obj.data.materials.find(mat.name)+1
                         data_type = 'float'
                     val = utils.convert_val_to_vector4(val, data_type)
                 
