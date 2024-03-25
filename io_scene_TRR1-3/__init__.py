@@ -1,19 +1,21 @@
 bl_info = {
-    "name" : "TRM Format (Tomb Raider I-III Remastered)",
+    "name" : "Tomb Raider I-III Remastered - Tools (.TRM, POSES.txt)",
     "author" : "MuruCoder, MaRaider, Czarpos",
-    "description" : "Import/Export tool for .TRM files for Tomb Raider Remastered I-III games.",
+    "description" : "Tools to handle .TRM and POSES.txt files for Tomb Raider Remastered I-III games.",
     "blender" : (4, 0, 0),
     "version" : (0, 6, 3),
     "category": "Import-Export",
-	"location": "File > Import/Export",
+	"location": "File > Import/Export; Material Properties > Surface; UV > N-Panel",
     "warning" : "Game uses DDS textures, must be handled separately.",
-    "doc_url": "https://www.tombraiderforums.com/showthread.php?t=228896",
-    "tracker_url": "https://www.tombraiderforums.com/showthread.php?t=228896"
+    "doc_url": "https://github.com/PositionWizard/TR123R-Blender-Addon",
+    "tracker_url": "https://github.com/PositionWizard/TR123R-Blender-Addon/issues"
 }
 
 # Reload previously loaded modules
 if "bpy" in locals():
     from importlib import reload
+    if "addon_updater_ops" in locals():
+        reload(addon_updater_ops)
     if "utils" in locals():
         reload(utils)
     if "trm_parse" in locals():
@@ -26,10 +28,12 @@ if "bpy" in locals():
         reload(ops)
     del reload
 
+from . import addon_updater_ops
 from . import utils
 from . import trm_parse, trm_import, trm_export, ops
 import bpy, os
 
+@addon_updater_ops.make_annotations
 class TRM_PT_Preferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
@@ -43,7 +47,7 @@ class TRM_PT_Preferences(bpy.types.AddonPreferences):
             prefs[key] = sane_path(prefs[key])
 
     dds_tool_filepath: bpy.props.StringProperty(
-        name="DDS Converter Path",
+        name="DDS Converter",
         description='Path to "texconv.exe" file"',
         subtype='FILE_PATH',
         update=lambda s,c: s.make_paths_abs(c, 'dds_tool_filepath'),
@@ -51,7 +55,7 @@ class TRM_PT_Preferences(bpy.types.AddonPreferences):
     )
 
     tex_conv_directory: bpy.props.StringProperty(
-        name="Converted PNG Directory",
+        name="Converted Directory",
         description='Directory to save converted PNG textures to.\n'
                     'Leave empty to save in TEX/PNGs folder in game directory',
         subtype='DIR_PATH',
@@ -60,7 +64,7 @@ class TRM_PT_Preferences(bpy.types.AddonPreferences):
     )
 
     game_path: bpy.props.StringProperty(
-        name="Game Directory Path",
+        name="Game Directory",
         description='Tomb Raider I-III Remastered game main directory.\n'
                     'Used to find texture files related to imported model.\n'
                     'Leave empty to automatically look for textures relative to directory the TRM is in',
@@ -68,6 +72,42 @@ class TRM_PT_Preferences(bpy.types.AddonPreferences):
         update=lambda s,c: s.make_paths_abs(c, 'game_path'),
         default=""
     )
+
+    # --------------------- Addon updater preferences --------------------- #
+
+    auto_check_update = bpy.props.BoolProperty(
+		name="Auto-check for Update",
+		description="If enabled, auto-check for updates using an interval",
+		default=False)
+
+    updater_interval_months = bpy.props.IntProperty(
+		name='Months',
+		description="Number of months between checking for updates",
+		default=0,
+		min=0)
+
+    updater_interval_days = bpy.props.IntProperty(
+		name='Days',
+		description="Number of days between checking for updates",
+		default=7,
+		min=0,
+		max=31)
+
+    updater_interval_hours = bpy.props.IntProperty(
+		name='Hours',
+		description="Number of hours between checking for updates",
+		default=0,
+		min=0,
+		max=23)
+
+    updater_interval_minutes = bpy.props.IntProperty(
+		name='Minutes',
+		description="Number of minutes between checking for updates",
+		default=0,
+		min=0,
+		max=59)
+
+    # --------------------------------------------------------------------- #
 
     def draw(self, context):
         layout = bpy.types.UILayout(self.layout)
@@ -78,10 +118,18 @@ class TRM_PT_Preferences(bpy.types.AddonPreferences):
         col.prop(self, 'game_path')
 
         col.separator()
+
         row = col.row()
-        row.label(text='Download "texconv.exe" file from:')
-        op = row.operator('wm.url_open', text=" Microsoft's GitHub Releases")
+        row.label(text='Download DDS Converter (texconv.exe) from:')
+        op = row.operator('wm.url_open', text="Microsoft's GitHub Releases")
         op.url = "https://github.com/microsoft/DirectXTex/releases"
+        
+        row = col.row()
+        row.label(text='Join the discussion, contribute to community:')
+        op = row.operator('wm.url_open', text='TombRaiderForums Thread')
+        op.url = "https://www.tombraiderforums.com/showthread.php?t=228896"
+
+        addon_updater_ops.update_settings_ui(self,context)
 
 def update_data_type(self, context, prop, data_type:str):
     """Update displayed values in TRM shader UI panel"""
@@ -248,6 +296,8 @@ class TRM_PT_ShaderSettings:
             col = layout.column(align=False)
             col.operator(ops.TRM_OT_CreateShader.bl_idname)
 
+        addon_updater_ops.update_notice_box_ui(self, context)
+
 class TRM_PT_ShaderSettings_Cycles(bpy.types.Panel, TRM_PT_ShaderSettings):
     bl_parent_id = "CYCLES_MATERIAL_PT_surface"
 
@@ -274,6 +324,8 @@ class TRM_PT_UvTools(bpy.types.Panel):
         op = row.operator(ops.TRM_OT_UV_QuantizeVerts.bl_idname, text="All")
         op.only_selected = False
 
+        addon_updater_ops.update_notice_box_ui(self, context)
+
 cls =(
     TRM_PT_Preferences,
     TRM_PG_ShaderDataPropTypes,
@@ -288,6 +340,7 @@ cls =(
 _register, _unregister = bpy.utils.register_classes_factory(cls)
 
 def register():
+    addon_updater_ops.register(bl_info)
     _register()
     bpy.types.Material.trm_settings = bpy.props.PointerProperty(type=TRM_PG_ShaderSettings)
     trm_import.register()
@@ -298,6 +351,7 @@ def unregister():
     trm_import.unregister()
     del bpy.types.Material.trm_settings
     _unregister()
+    addon_updater_ops.unregister(bl_info)
 
 if __name__ == "__main__":
     register()
