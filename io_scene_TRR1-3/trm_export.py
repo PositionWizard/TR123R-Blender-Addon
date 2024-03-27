@@ -15,7 +15,7 @@ from bpy_extras.io_utils import ExportHelper
 from bpy.props import StringProperty, BoolProperty, FloatProperty
 from bpy.types import Operator
 from . import utils as trm_utils
-from .trm_parse import TRM_HEADER, TRM_FORMAT, TRM_ANIM_FORMAT
+from .bin_parse import TRM_HEADER, TRM_FORMAT, TRM_ANIM_FORMAT
 
 class TRM_OT_ExportTRM(Operator, ExportHelper):
     """Save object as TRM file"""
@@ -316,23 +316,23 @@ class TRM_OT_ExportTRM(Operator, ExportHelper):
             if os.path.exists(trm_anim_filepath):
                 print("-------------------------------------------------")
                 print(f'INJECTING ANIM DATA FROM "{trm_anim_filepath}" FILE...')
-                from . import trm_parse
+                from . import bin_parse
                 with open(trm_anim_filepath, 'rb') as f_anim:
                     # check for TRM\x02 marker
-                    if trm_parse.is_TRM_header(f_anim):
-                        num_anim_bones = trm_parse.read_uint32(f_anim)
+                    if bin_parse.is_TRM_header(f_anim):
+                        num_anim_bones = bin_parse.read_uint32(f_anim)
                         if num_anim_bones > 0:
-                            anim_bones = tuple(trm_parse.read_float_tuple(f_anim, 12) for n in range(num_anim_bones))
+                            anim_bones = tuple(bin_parse.read_float_tuple(f_anim, 12) for n in range(num_anim_bones))
                                 
-                            num_anim_unknown2 = trm_parse.read_uint32(f_anim)
-                            anim_unknown2 = tuple(trm_parse.read_uint32_tuple(f_anim, 2) for n in range(num_anim_unknown2))
+                            num_anim_unknown2 = bin_parse.read_uint32(f_anim)
+                            anim_unknown2 = tuple(bin_parse.read_uint32_tuple(f_anim, 2) for n in range(num_anim_unknown2))
                             
-                            num_anim_unknown3 = trm_parse.read_uint32(f_anim)
-                            anim_unknown3 = trm_parse.read_uint32_tuple(f_anim, num_anim_unknown3) # Frame numbers?
+                            num_anim_unknown3 = bin_parse.read_uint32(f_anim)
+                            anim_unknown3 = bin_parse.read_uint32_tuple(f_anim, num_anim_unknown3) # Frame numbers?
                             
-                            num_anim_unknown4 = trm_parse.read_ushort16(f_anim)
-                            num_anim_unknown5 = trm_parse.read_ushort16(f_anim)  # this is unused, still unknown
-                            anim_unknown4 = tuple(trm_parse.read_float_tuple(f_anim, 12) for n in range(num_anim_unknown3 * num_anim_unknown4))
+                            num_anim_unknown4 = bin_parse.read_ushort16(f_anim)
+                            num_anim_unknown5 = bin_parse.read_ushort16(f_anim)  # this is unused, still unknown
+                            anim_unknown4 = tuple(bin_parse.read_float_tuple(f_anim, 12) for n in range(num_anim_unknown3 * num_anim_unknown4))
 
                             f.write(pack("<I", num_anim_bones))
                             f.write(pack("<%df" % (12*num_anim_bones), *[x for y in anim_bones for x in y]))
@@ -376,7 +376,7 @@ class TRM_OT_ExportTRM(Operator, ExportHelper):
                                     print(f'Unknown data 4: {anim_unknown4}')
                     else:
                         self.report({'ERROR'}, f'"{filename}{TRM_ANIM_FORMAT}" file is not a {TRM_ANIM_FORMAT} file! Skipping anim data...')
-                del trm_parse
+                del bin_parse
             else:
                 self.report({'WARNING'}, f'{TRM_ANIM_FORMAT} file not found at "{trm_anim_filepath}"! Skipping anim data...')
 

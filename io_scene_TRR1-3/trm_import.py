@@ -1,7 +1,7 @@
 import bpy, math, random, subprocess, time
 from struct import unpack
 import os.path as Path
-from . import trm_parse
+from . import bin_parse
 from . import utils as trm_utils
 
 def NormalBYTE2FLOAT(x, y, z):
@@ -75,7 +75,7 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
     bl_label = "Import TRM"
     bl_options = {'UNDO'}
 
-    filename_ext = f"{trm_parse.TRM_FORMAT}"
+    filename_ext = f"{bin_parse.TRM_FORMAT}"
 
     ###########################################
     # necessary to support multi-file import
@@ -90,7 +90,7 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
     ##########################################
 
     filter_glob: StringProperty(
-        default=f"*{trm_parse.TRM_FORMAT}",
+        default=f"*{bin_parse.TRM_FORMAT}",
         options={'HIDDEN'},
         maxlen=255,
     )
@@ -346,64 +346,64 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
         f = open(filepath, 'rb')
 
         # TRM\x02 marker
-        if unpack('>I', f.read(4))[0] != trm_parse.TRM_HEADER:
+        if unpack('>I', f.read(4))[0] != bin_parse.TRM_HEADER:
             self.report({'ERROR'}, "Not a TRM file!")
             return {'CANCELLED'}
 
         # SHADERS
         shaders: list[trm_utils.TRM_Shader] = []
-        num_shaders = trm_parse.read_uint32(f)
+        num_shaders = bin_parse.read_uint32(f)
         for n in range(num_shaders):
-            sh_type = trm_parse.read_uint32(f)
+            sh_type = bin_parse.read_uint32(f)
             sh_uks = []
             # 4 unknown pieces of data
             for i in range(4):
-                uks_floats = [round(v/255, 4) for v in trm_parse.read_uint8_tuple(f, 4)]
+                uks_floats = [round(v/255, 4) for v in bin_parse.read_uint8_tuple(f, 4)]
                 sh_uks.append(uks_floats)
 
             sh_ids_list = []
             # 3 pieces of indice data
             for i in range(3):
-                sh_ids = trm_parse.read_uint32_tuple(f, 2)
+                sh_ids = bin_parse.read_uint32_tuple(f, 2)
                 sh_ids_list.append(trm_utils.TRM_ShaderIndices(sh_ids[0], sh_ids[1]))
             shader = trm_utils.TRM_Shader(sh_type, sh_uks[0], sh_uks[1], sh_uks[2], sh_uks[3], sh_ids_list[0], sh_ids_list[1], sh_ids_list[2])
             shaders.append(shader)
             # print(f"Shader[{n}]: {shader}\n")
 
         # TEXTURES
-        num_textures = trm_parse.read_uint32(f)
-        textures = trm_parse.read_ushort16_tuple(f, num_textures)
+        num_textures = bin_parse.read_uint32(f)
+        textures = bin_parse.read_ushort16_tuple(f, num_textures)
 
         # BYTE ALIGN
         if f.tell() % 4: f.read(4 - (f.tell()%4))
 
         # UNKNOWN ANIMATION DATA - STORE IN SEPARATE FILE
-        num_anim_bones = trm_parse.read_uint32(f)
+        num_anim_bones = bin_parse.read_uint32(f)
         if num_anim_bones > 0:
-            anim_bones = tuple(trm_parse.read_float_tuple(f, 12) for n in range(num_anim_bones))
+            anim_bones = tuple(bin_parse.read_float_tuple(f, 12) for n in range(num_anim_bones))
                 
-            num_anim_unknown2 = trm_parse.read_uint32(f)
-            anim_unknown2 = tuple(trm_parse.read_uint32_tuple(f, 2) for n in range(num_anim_unknown2))
+            num_anim_unknown2 = bin_parse.read_uint32(f)
+            anim_unknown2 = tuple(bin_parse.read_uint32_tuple(f, 2) for n in range(num_anim_unknown2))
             
-            num_anim_unknown3 = trm_parse.read_uint32(f)
-            anim_unknown3 = trm_parse.read_uint32_tuple(f, num_anim_unknown3) # Frame numbers?
+            num_anim_unknown3 = bin_parse.read_uint32(f)
+            anim_unknown3 = bin_parse.read_uint32_tuple(f, num_anim_unknown3) # Frame numbers?
             
             # print(f'num unknown 4 offset: {hex(f.tell())}')
-            num_anim_unknown4 = trm_parse.read_ushort16(f)
+            num_anim_unknown4 = bin_parse.read_ushort16(f)
             # print(f'num unknown 5 offset: {hex(f.tell())}')
-            num_anim_unknown5 = trm_parse.read_ushort16(f)  # this is unused, still unknown
+            num_anim_unknown5 = bin_parse.read_ushort16(f)  # this is unused, still unknown
             # print(f'unknown 3x4 offset: {hex(f.tell())}')
-            anim_unknown4 = tuple(trm_parse.read_float_tuple(f, 12) for n in range(num_anim_unknown3 * num_anim_unknown4))
+            anim_unknown4 = tuple(bin_parse.read_float_tuple(f, 12) for n in range(num_anim_unknown3 * num_anim_unknown4))
             # anim_unknown4 = unpack('<%df' % (num_anim_unknown4*num_anim_unknown3*12), f.read(48*num_anim_unknown4*num_anim_unknown3))
             # print(f'end of anim data offset: {hex(f.tell())}')
 
-            trm_anim_filepath = f'{self.directory}{filename}{trm_parse.TRM_ANIM_FORMAT}'
+            trm_anim_filepath = f'{self.directory}{filename}{bin_parse.TRM_ANIM_FORMAT}'
             print("-------------------------------------------------")
             print(f'SAVING UNKNOWN ANIM DATA TO "{trm_anim_filepath}" FILE...')
             from struct import pack
             with open(trm_anim_filepath, 'w+b') as f_anim:
                 # TRM\x02 marker
-                f_anim.write(pack(">I", trm_parse.TRM_HEADER))
+                f_anim.write(pack(">I", bin_parse.TRM_HEADER))
 
                 f_anim.write(pack("<I", num_anim_bones))
                 f_anim.write(pack("<%df" % (12*num_anim_bones), *[x for y in anim_bones for x in y]))
@@ -450,11 +450,11 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
 
 
         # INDICE & VERTICE COUNTS
-        num_indices = trm_parse.read_uint32(f)
-        num_vertices = trm_parse.read_uint32(f)
+        num_indices = bin_parse.read_uint32(f)
+        num_vertices = bin_parse.read_uint32(f)
 
         # READ INDICES
-        indices = trm_parse.read_ushort16_tuple(f, num_indices)
+        indices = bin_parse.read_ushort16_tuple(f, num_indices)
 
         # BYTE ALIGN
         if f.tell() % 4: f.read(4 - (f.tell()%4))
@@ -694,7 +694,7 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
                 col.enabled = False
 
 def menu_func_import(self, context):
-    self.layout.operator(TRM_OT_ImportTRM.bl_idname, text=f"Tomb Raider I-III Remastered ({trm_parse.TRM_FORMAT})")
+    self.layout.operator(TRM_OT_ImportTRM.bl_idname, text=f"Tomb Raider I-III Remastered ({bin_parse.TRM_FORMAT})")
 
 def register():
     bpy.utils.register_class(TRM_OT_ImportTRM)
