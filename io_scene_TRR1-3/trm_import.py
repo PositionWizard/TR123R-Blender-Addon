@@ -1,8 +1,11 @@
 import bpy, math, random, subprocess, time
 from struct import unpack
+from mathutils import Vector
 import os.path as Path
-from . import trm_parse
+from . import bin_parse
 from . import utils as trm_utils
+from .pdp_utils import SKELETON_DATA_FILEPATH
+import xml.etree.ElementTree as ET
 
 def NormalBYTE2FLOAT(x, y, z):
     x = x - 127
@@ -11,7 +14,7 @@ def NormalBYTE2FLOAT(x, y, z):
     length = math.sqrt((x * x) + (y * y) + (z * z))
     return (x / length, y / length, z / length)
 
-def CreateVertexGroups(trm, joints, armature, filepath):
+def CreateVertexGroups(trm, joints, rig, bones, armature, filename):
     # possible vertex group names, 10 per line for easier counting
     vg_names = [
         "root", "hips", "stomach", "chest", "torso", "neck", "head", "jaw", "jaw_lower", "jaw_upper",
@@ -46,7 +49,7 @@ def CreateVertexGroups(trm, joints, armature, filepath):
     # decide which list to use
     if armature == 'AUTO':
         for k in vg_names_map.keys():
-            if k in filepath:
+            if k in filename:
                 armature = vg_names_map[k]
                 break
 
@@ -56,12 +59,16 @@ def CreateVertexGroups(trm, joints, armature, filepath):
 
     len1 = len(gl)
     len2 = len(vg_names)
+    skel_size = len(rig.pose.bones) if rig and bones else 0
     for n in range(joints):
         if n < len1 and gl[n] < len2:
             name = vg_names[gl[n]]
         else:
             name = "Joint" + str(n)
         trm.vertex_groups.new(name=name)
+        if skel_size and n < skel_size:
+            pb = rig.pose.bones[bones[n]]
+            pb.name = name
 
 
 from bpy_extras.io_utils import ImportHelper
@@ -75,7 +82,7 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
     bl_label = "Import TRM"
     bl_options = {'UNDO'}
 
-    filename_ext = f"{trm_parse.TRM_FORMAT}"
+    filename_ext = f"{bin_parse.TRM_FORMAT}"
 
     ###########################################
     # necessary to support multi-file import
@@ -90,7 +97,7 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
     ##########################################
 
     filter_glob: StringProperty(
-        default=f"*{trm_parse.TRM_FORMAT}",
+        default=f"*{bin_parse.TRM_FORMAT}",
         options={'HIDDEN'},
         maxlen=255,
     )
@@ -138,6 +145,22 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
         description="Tries to weld non-manifold edges, resulting in mesh welding along UV seams.\n"
                     "Helps with shading and mesh editing",
         default=True
+    )
+
+    connect_bones: BoolProperty(
+        name="Force Connect Bones",
+        description="Try to connect parent bones to the children bones on imported Armatures.\n\n"
+                    "May look weird with some things like breakable floor, glass, etc.\n"
+                    "Disabling it will point all bones in the Armature object's direction\n"
+                    "which is the original bone orientation for Tomb Raider skeletons.",
+        default=True
+    )
+
+    auto_orient_bones: BoolProperty(
+        name="Auto Bone Orientation",
+        description="Try to automatically orient last bones in the chains\n"
+                    "according to their parent's orientation",
+        default=False
     )
 
     skip_texconv = False
@@ -341,69 +364,154 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
 
             trm_utils.space_out_nodes(nodes_to_align)
 
-    def read_trm_data(self, context, filepath, addon_prefs, filename):
+    def create_armature(self, filename, skeldata_path, trm):
+        def setup_armature(rig):
+            trm.parent = rig
+            mod = trm.modifiers.new('TRM Armature', 'ARMATURE')
+            mod.object = rig
+
+        # PLACEHOLDER
+        lara_paths = {
+            "OUTFIT_": 'Lara',
+            "HOLSTER_": 'Lara',
+            "HAND_": 'Lara',
+        }
+
+        default_bone_length = 64
+
+        bone_names = []
+        #TODO: Handle other TRMs by replacing entity names with TRM names in the xml
+        # get substring of a TRM name matching dict's keys
+        trm_substr = next(iter([subname for subname in lara_paths.keys() if subname in filename]), "")
+        if trm_substr:
+            # Look for a first armature with a name having the same substring as one found in TRM name
+            ob_name = next(iter([ob.name for ob in bpy.context.collection.objects if trm_substr in ob.name and ob.type == 'ARMATURE']), "")
+            if ob_name:
+                rig = bpy.context.collection.objects.get(ob_name)
+                setup_armature(rig)
+                return rig, bone_names
+                
+            saved_active = bpy.context.active_object
+            rig_name = f'Rig_{filename}'
+            armature = bpy.data.armatures.new(rig_name)
+            rig = bpy.data.objects.new(rig_name, armature)
+            bpy.context.collection.objects.link(rig)
+            setup_armature(rig)
+
+            bpy.context.view_layer.objects.active = rig
+            saved_mode = bpy.context.mode
+            bpy.ops.object.mode_set(mode='EDIT')
+
+            e_bones = armature.edit_bones
+
+            skeldata = ET.parse(skeldata_path)
+            skeldata_root = skeldata.getroot()
+
+            #TODO: Handle files based on a game number
+            skeldata_arm = skeldata_root.find("./Game/Armature/[@name='%s']" % lara_paths[trm_substr])
+            skeldata_bones = skeldata_arm.findall("./Bone")
+            for skeldata_bone in skeldata_bones:
+                p_ID = int(skeldata_bone.attrib['p_ID'])
+                skeldata_bone_head = skeldata_bone.find("./Data/[@type='HEAD']")
+                skeldata_bone_tail = skeldata_bone.find("./Data/[@type='TAIL']")
+
+                bone = e_bones.new(f'Bone')
+                b_data_head = Vector(eval(skeldata_bone_head.attrib['Vector']))
+                b_head = Vector((b_data_head.x, b_data_head.z, b_data_head.y)) * -self.scale
+                if self.connect_bones and skeldata_bone_tail is not None:
+                    b_data_tail = Vector(eval(skeldata_bone_tail.attrib['Vector']))
+                    b_tail = Vector((b_data_tail.x, b_data_tail.z, b_data_tail.y)) * -self.scale
+                else:
+                    b_tail = Vector((0, default_bone_length, 0)) * self.scale
+
+                b_tail += b_head
+
+                if p_ID > -1:
+                    bone.parent = e_bones[p_ID]
+                    if self.auto_orient_bones and self.connect_bones and skeldata_bone_tail is None:
+                        parent_bone_direction = Vector(bone.parent.tail - bone.parent.head).normalized()
+                        b_tail = parent_bone_direction * default_bone_length * self.scale
+                        b_tail += b_head
+
+                    bone.head = b_head
+                    bone.tail = b_tail
+                    bone.translate(bone.parent.head)
+                else:
+                    bone.head = b_head
+                    bone.tail = b_tail
+
+                bone_names.append(bone.name)
+
+            bpy.ops.object.mode_set(mode=saved_mode)
+            bpy.context.view_layer.objects.active = saved_active            
+        else:
+            rig = None
+
+        return rig, bone_names
+    
+    def read_trm_data(self, context, filepath, addon_prefs, filename, skeldata_path):
         print("IMPORTING...")
         f = open(filepath, 'rb')
 
         # TRM\x02 marker
-        if unpack('>I', f.read(4))[0] != trm_parse.TRM_HEADER:
+        if unpack('>I', f.read(4))[0] != bin_parse.TRM_HEADER:
             self.report({'ERROR'}, "Not a TRM file!")
             return {'CANCELLED'}
 
         # SHADERS
         shaders: list[trm_utils.TRM_Shader] = []
-        num_shaders = trm_parse.read_uint32(f)
+        num_shaders = bin_parse.read_uint32(f)
         for n in range(num_shaders):
-            sh_type = trm_parse.read_uint32(f)
+            sh_type = bin_parse.read_uint32(f)
             sh_uks = []
             # 4 unknown pieces of data
             for i in range(4):
-                uks_floats = [round(v/255, 4) for v in trm_parse.read_uint8_tuple(f, 4)]
+                uks_floats = [round(v/255, 4) for v in bin_parse.read_uint8_tuple(f, 4)]
                 sh_uks.append(uks_floats)
 
             sh_ids_list = []
             # 3 pieces of indice data
             for i in range(3):
-                sh_ids = trm_parse.read_uint32_tuple(f, 2)
+                sh_ids = bin_parse.read_uint32_tuple(f, 2)
                 sh_ids_list.append(trm_utils.TRM_ShaderIndices(sh_ids[0], sh_ids[1]))
             shader = trm_utils.TRM_Shader(sh_type, sh_uks[0], sh_uks[1], sh_uks[2], sh_uks[3], sh_ids_list[0], sh_ids_list[1], sh_ids_list[2])
             shaders.append(shader)
             # print(f"Shader[{n}]: {shader}\n")
 
         # TEXTURES
-        num_textures = trm_parse.read_uint32(f)
-        textures = trm_parse.read_ushort16_tuple(f, num_textures)
+        num_textures = bin_parse.read_uint32(f)
+        textures = bin_parse.read_ushort16_tuple(f, num_textures)
 
         # BYTE ALIGN
         if f.tell() % 4: f.read(4 - (f.tell()%4))
 
         # UNKNOWN ANIMATION DATA - STORE IN SEPARATE FILE
-        num_anim_bones = trm_parse.read_uint32(f)
+        num_anim_bones = bin_parse.read_uint32(f)
         if num_anim_bones > 0:
-            anim_bones = tuple(trm_parse.read_float_tuple(f, 12) for n in range(num_anim_bones))
+            anim_bones = tuple(bin_parse.read_float_tuple(f, 12) for n in range(num_anim_bones))
                 
-            num_anim_unknown2 = trm_parse.read_uint32(f)
-            anim_unknown2 = tuple(trm_parse.read_uint32_tuple(f, 2) for n in range(num_anim_unknown2))
+            num_anim_unknown2 = bin_parse.read_uint32(f)
+            anim_unknown2 = tuple(bin_parse.read_uint32_tuple(f, 2) for n in range(num_anim_unknown2))
             
-            num_anim_unknown3 = trm_parse.read_uint32(f)
-            anim_unknown3 = trm_parse.read_uint32_tuple(f, num_anim_unknown3) # Frame numbers?
+            num_anim_unknown3 = bin_parse.read_uint32(f)
+            anim_unknown3 = bin_parse.read_uint32_tuple(f, num_anim_unknown3) # Frame numbers?
             
             # print(f'num unknown 4 offset: {hex(f.tell())}')
-            num_anim_unknown4 = trm_parse.read_ushort16(f)
+            num_anim_unknown4 = bin_parse.read_ushort16(f)
             # print(f'num unknown 5 offset: {hex(f.tell())}')
-            num_anim_unknown5 = trm_parse.read_ushort16(f)  # this is unused, still unknown
+            num_anim_unknown5 = bin_parse.read_ushort16(f)  # this is unused, still unknown
             # print(f'unknown 3x4 offset: {hex(f.tell())}')
-            anim_unknown4 = tuple(trm_parse.read_float_tuple(f, 12) for n in range(num_anim_unknown3 * num_anim_unknown4))
+            anim_unknown4 = tuple(bin_parse.read_float_tuple(f, 12) for n in range(num_anim_unknown3 * num_anim_unknown4))
             # anim_unknown4 = unpack('<%df' % (num_anim_unknown4*num_anim_unknown3*12), f.read(48*num_anim_unknown4*num_anim_unknown3))
             # print(f'end of anim data offset: {hex(f.tell())}')
 
-            trm_anim_filepath = f'{self.directory}{filename}{trm_parse.TRM_ANIM_FORMAT}'
+            trm_anim_filepath = f'{self.directory}{filename}{bin_parse.TRM_ANIM_FORMAT}'
             print("-------------------------------------------------")
             print(f'SAVING UNKNOWN ANIM DATA TO "{trm_anim_filepath}" FILE...')
             from struct import pack
             with open(trm_anim_filepath, 'w+b') as f_anim:
                 # TRM\x02 marker
-                f_anim.write(pack(">I", trm_parse.TRM_HEADER))
+                f_anim.write(pack(">I", bin_parse.TRM_HEADER))
 
                 f_anim.write(pack("<I", num_anim_bones))
                 f_anim.write(pack("<%df" % (12*num_anim_bones), *[x for y in anim_bones for x in y]))
@@ -450,11 +558,11 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
 
 
         # INDICE & VERTICE COUNTS
-        num_indices = trm_parse.read_uint32(f)
-        num_vertices = trm_parse.read_uint32(f)
+        num_indices = bin_parse.read_uint32(f)
+        num_vertices = bin_parse.read_uint32(f)
 
         # READ INDICES
-        indices = trm_parse.read_ushort16_tuple(f, num_indices)
+        indices = bin_parse.read_ushort16_tuple(f, num_indices)
 
         # BYTE ALIGN
         if f.tell() % 4: f.read(4 - (f.tell()%4))
@@ -559,9 +667,12 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
             for i in p.loop_indices:
                 v = trm_mesh.loops[i].vertex_index
                 uvs.data[i].uv = (vertices[v][10] / 255, (255 - vertices[v][14]) / 255)
+        
+        # CREATE ARMATURE
+        rig, bone_names = self.create_armature(filename, skeldata_path, trm)
 
         # CREATE & ASSIGN VERTEX GROUPS
-        CreateVertexGroups(trm, max_joint + 1, self.mesh_type, filepath)
+        CreateVertexGroups(trm, max_joint + 1, rig, bone_names, self.mesh_type, filename)
         for n in range(num_vertices):
             g = trm.vertex_groups
             v = vertices[n]
@@ -634,10 +745,20 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
             self.report({'WARNING'}, f'Wrong DDS Converter path or file type: "{texconv_path}", skipping texture conversion...')
             self.skip_texconv = True
 
+        addon_dir = os.path.dirname(__file__)
+        skeldata_path = os.path.join(addon_dir, SKELETON_DATA_FILEPATH)
+        is_skeldata = os.path.exists(skeldata_path)
+
         for f in self.files:
             filepath = Path.join(self.directory, f.name)
+            # Generate missing SkeletonData.xml on a first import that can create an armature
+            # TODO: Support more/all TRMs - this will require pairing TRM names with model IDs
+            if not is_skeldata:
+                print("Generating Skeleton Data...")
+                bpy.ops.io_tombraider123r.generate_skeleton_data()
+
             obj_name = str(f.name).removesuffix(self.filename_ext)
-            result = self.read_trm_data(context, filepath, addon_prefs, obj_name)
+            result = self.read_trm_data(context, filepath, addon_prefs, obj_name, skeldata_path)
 
         end_time = time.process_time() - start_time
         if result != {'CANCELLED'}:
@@ -666,6 +787,9 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
         layout.prop(self, 'scale')
         layout.prop(self, 'mesh_type')
         layout.prop(self, 'merge_uv')
+        layout.prop(self, 'connect_bones')
+        if self.connect_bones:
+            layout.prop(self, 'auto_orient_bones')
         layout.prop(self, 'use_tex')
 
         if self.use_tex:
@@ -694,7 +818,7 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
                 col.enabled = False
 
 def menu_func_import(self, context):
-    self.layout.operator(TRM_OT_ImportTRM.bl_idname, text=f"Tomb Raider I-III Remastered ({trm_parse.TRM_FORMAT})")
+    self.layout.operator(TRM_OT_ImportTRM.bl_idname, text=f"Tomb Raider I-III Remastered ({bin_parse.TRM_FORMAT})")
 
 def register():
     bpy.utils.register_class(TRM_OT_ImportTRM)

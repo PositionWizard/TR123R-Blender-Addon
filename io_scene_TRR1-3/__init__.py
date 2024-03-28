@@ -18,8 +18,10 @@ if "bpy" in locals():
         reload(addon_updater_ops)
     if "utils" in locals():
         reload(utils)
-    if "trm_parse" in locals():
-        reload(trm_parse)
+    if "pdp_utils" in locals():
+        reload(pdp_utils)
+    if "bin_parse" in locals():
+        reload(bin_parse)
     if "trm_import" in locals():
         reload(trm_import)
     if "trm_export" in locals():
@@ -28,9 +30,7 @@ if "bpy" in locals():
         reload(ops)
     del reload
 
-from . import addon_updater_ops
-from . import utils
-from . import trm_parse, trm_import, trm_export, ops
+from . import addon_updater_ops, utils, pdp_utils, bin_parse, trm_import, trm_export, ops
 import bpy, os
 
 @addon_updater_ops.make_annotations
@@ -123,7 +123,13 @@ class TRM_PT_Preferences(bpy.types.AddonPreferences):
         row.label(text='Download DDS Converter (texconv.exe) from:')
         op = row.operator('wm.url_open', text="Microsoft's GitHub Releases")
         op.url = "https://github.com/microsoft/DirectXTex/releases"
-        
+
+        row = col.row()
+        row.label(text='Generate Bone Data for TRMs:')
+        row.operator('io_tombraider123r.generate_skeleton_data')
+
+        col.separator()
+
         row = col.row()
         row.label(text='Join the discussion, contribute to community:')
         op = row.operator('wm.url_open', text='TombRaiderForums Thread')
@@ -333,8 +339,6 @@ cls =(
     TRM_PT_ShaderSettings_Cycles,
     TRM_PT_ShaderSettings_Eevee,
     TRM_PT_UvTools,
-    ops.TRM_OT_CreateShader,
-    ops.TRM_OT_UV_QuantizeVerts
 )
 
 _register, _unregister = bpy.utils.register_classes_factory(cls)
@@ -345,13 +349,15 @@ def register():
     bpy.types.Material.trm_settings = bpy.props.PointerProperty(type=TRM_PG_ShaderSettings)
     trm_import.register()
     trm_export.register()
+    ops._register()
 
 def unregister():
+    ops._unregister()
     trm_export.unregister()
     trm_import.unregister()
     del bpy.types.Material.trm_settings
     _unregister()
-    addon_updater_ops.unregister(bl_info)
+    addon_updater_ops.unregister()
 
 if __name__ == "__main__":
     register()

@@ -1,5 +1,6 @@
-import bpy, bmesh
+import bpy, bmesh, os, pathlib
 from . import utils as trm_utils
+from . import pdp_utils
 
 class TRM_OT_CreateShader(bpy.types.Operator):
     bl_idname = "io_tombraider123r.create_shader"
@@ -133,3 +134,70 @@ class TRM_OT_UV_QuantizeVerts(bpy.types.Operator):
         
         bmesh.update_edit_mesh(mesh, destructive=False, loop_triangles=False)
         return {"FINISHED"}
+
+class TRM_OT_GenerateSkeletonData(bpy.types.Operator):
+    bl_idname = "io_tombraider123r.generate_skeleton_data"
+    bl_label = "Generate Skeleton Data"
+    bl_description = "Generates Bone data inside addon's directory, for each model in the game based on .PHD files from DATA folders.\nRequires Game Directory to be provided."
+
+    op_result = None
+    op_result_msg = []
+
+    @classmethod
+    def poll(cls, context):
+        prefs = context.preferences.addons[__package__].preferences
+        if 'game_path' in prefs:
+            return os.path.exists(prefs.game_path)
+
+    def execute(self, context):
+        # Skip another execution on popup's 'OK' button
+        if self.op_result != None:
+            return self.op_result
+        
+        prefs = context.preferences.addons[__package__].preferences
+        game_path = prefs.game_path
+
+        # Loop through game folders in game directory and check for any existence of .PDP files
+        path_valid = False
+        for i in range(1,4):
+            gamedata_path = pathlib.Path(game_path).joinpath(f'{i}/DATA')
+            if any([True for x in pathlib.Path.glob(gamedata_path, '*.PDP')]):
+                path_valid = True
+                break
+
+        if not path_valid:
+            self.op_result = {'CANCELLED'}
+            self.op_result_msg = ["Wrong Game Directory!", "Couldn't find .PDP files in DATA folders."]
+            return self.op_result
+        
+        pdp_utils.xml_write_skeleton(game_path)
+
+        self.op_result = {"FINISHED"}
+        self.op_result_msg = ["Success!", "Skeleton Data generated successfully.", "TRMs can create armatures now.", "NOTE: WIP - for now only Lara meshes are supported!"]
+        return self.op_result
+
+    
+    def invoke(self, context, event):
+        # Execute script, dialog box acts only as a message box for results
+        # Hitting OK should skip another execution via operator result stored in var
+        self.execute(context)
+        return context.window_manager.invoke_props_dialog(self)
+    
+    def draw(self, context):
+        layout = self.layout
+        flow = layout.grid_flow()
+        col = flow.column_flow()
+        
+        res_icon = "CANCEL" if 'CANCELLED' in self.op_result else "INFO"
+        row = col.row()
+        row.label(text=self.op_result_msg[0], icon=res_icon)
+        for line in self.op_result_msg[1:]:
+            row = col.row()
+            row.label(text=line)
+    
+cls = (
+    TRM_OT_CreateShader,
+    TRM_OT_UV_QuantizeVerts,
+    TRM_OT_GenerateSkeletonData
+)
+_register, _unregister = bpy.utils.register_classes_factory(cls)

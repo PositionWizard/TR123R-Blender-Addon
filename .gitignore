@@ -3,3 +3,4 @@ __pycache__/
 .vscode/
 .dev
 io_scene_trr1-3_updater/
+lib_user/

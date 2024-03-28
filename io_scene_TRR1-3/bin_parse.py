@@ -12,6 +12,10 @@ def read_float_tuple(file, size=1):
     """Reads value and return a tuple of 'size' of floats from 4 bytes each."""
     return unpack('<%df' % size, file.read(4 * size))
 
+def read_int32(file):
+    """Reads value and return an int from 4 bytes."""
+    return unpack('<i', file.read(4))[0] 
+
 def read_uint32(file):
     """Reads value and return an unsigned int from 4 bytes."""
     return unpack('<I', file.read(4))[0] 
