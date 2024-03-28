@@ -148,11 +148,19 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
     )
 
     connect_bones: BoolProperty(
-        name="Connect Bones",
+        name="Force Connect Bones",
         description="Try to connect parent bones to the children bones on imported Armatures.\n\n"
                     "May look weird with some things like breakable floor, glass, etc.\n"
-                    "Disabling it will point all bones in the Armature object's direction.",
+                    "Disabling it will point all bones in the Armature object's direction\n"
+                    "which is the original bone orientation for Tomb Raider skeletons.",
         default=True
+    )
+
+    auto_orient_bones: BoolProperty(
+        name="Auto Bone Orientation",
+        description="Try to automatically orient last bones in the chains\n"
+                    "according to their parent's orientation",
+        default=False
     )
 
     skip_texconv = False
@@ -369,6 +377,8 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
             "HAND_": 'Lara',
         }
 
+        default_bone_length = 64
+
         bone_names = []
         #TODO: Handle other TRMs by replacing entity names with TRM names in the xml
         # get substring of a TRM name matching dict's keys
@@ -406,17 +416,29 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
                 skeldata_bone_tail = skeldata_bone.find("./Data/[@type='TAIL']")
 
                 bone = e_bones.new(f'Bone')
-                b_head = Vector(eval(skeldata_bone_head.attrib['Vector']))
-                bone.head = Vector((b_head.x, b_head.z, b_head.y)) * -self.scale
+                b_data_head = Vector(eval(skeldata_bone_head.attrib['Vector']))
+                b_head = Vector((b_data_head.x, b_data_head.z, b_data_head.y)) * -self.scale
                 if self.connect_bones and skeldata_bone_tail is not None:
-                    b_tail = Vector(eval(skeldata_bone_tail.attrib['Vector']))
-                    bone.tail = Vector((b_tail.x, b_tail.z, b_tail.y)) * -self.scale
+                    b_data_tail = Vector(eval(skeldata_bone_tail.attrib['Vector']))
+                    b_tail = Vector((b_data_tail.x, b_data_tail.z, b_data_tail.y)) * -self.scale
                 else:
-                    bone.tail = Vector((0, -64, 0)) * -self.scale
-                bone.tail += bone.head
+                    b_tail = Vector((0, default_bone_length, 0)) * self.scale
+
+                b_tail += b_head
+
                 if p_ID > -1:
                     bone.parent = e_bones[p_ID]
+                    if self.auto_orient_bones and self.connect_bones and skeldata_bone_tail is None:
+                        parent_bone_direction = Vector(bone.parent.tail - bone.parent.head).normalized()
+                        b_tail = parent_bone_direction * default_bone_length * self.scale
+                        b_tail += b_head
+
+                    bone.head = b_head
+                    bone.tail = b_tail
                     bone.translate(bone.parent.head)
+                else:
+                    bone.head = b_head
+                    bone.tail = b_tail
 
                 bone_names.append(bone.name)
 
@@ -766,6 +788,8 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
         layout.prop(self, 'mesh_type')
         layout.prop(self, 'merge_uv')
         layout.prop(self, 'connect_bones')
+        if self.connect_bones:
+            layout.prop(self, 'auto_orient_bones')
         layout.prop(self, 'use_tex')
 
         if self.use_tex:

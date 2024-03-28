@@ -99,7 +99,8 @@ def get_bone_data(model) -> list:
                 child = c
                 
         bone_data = bones[p]
-        if children == 1:
+        # guess and save bone's tail data according to last child bone under it (children == 1 would get first one)
+        if children > 0:
             c = bones[child][1]
             bone_data.append((c[0], c[1], c[2]))
 
