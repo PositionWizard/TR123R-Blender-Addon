@@ -4,26 +4,8 @@ from struct import unpack
 from pathlib import Path
 from . import bin_parse
 
-TR_ENTITY_NAMES_FILENAME = "EntityNames.xml"
-SKELETON_DATA_FILENAME = "SkeletonData.xml"
-
-joints = [
-[-1, (0, 0, 0)],                        # 3 CHILD BONES
-[0, (-42, 20, 2), (9, 185, 3)],         # 1 CHILD BONE (TAIL PROPOSAL)
-[1, (9, 185, 3), (1, 192, -8)],         # 1 CHILD BONE (TAIL PROPOSAL)
-[2, (1, 192, -8)],                      # LEAF BONE
-[0, (43, 20, 2), (-10, 185, 2)],        # 1 CHILD BONE (TAIL PROPOSAL)
-[4, (-10, 185, 2), (0, 193, -2)],       # 1 CHILD BONE (TAIL PROPOSAL)
-[5, (0, 193, -2)],                      # LEAF BONE
-[0, (-1, -49, 11)],                     # 3 CHILD BONES
-[7, (59, -142, -12), (10, 95, -2)],     # 1 CHILD BONE (TAIL PROPOSAL)
-[8, (10, 95, -2), (1, 101, -1)],        # 1 CHILD BONE (TAIL PROPOSAL)
-[9, (1, 101, -1)],                      # LEAF BONE
-[7, (-57, -143, -12), (-9, 98, -2)],    # 1 CHILD BONE (TAIL PROPOSAL)
-[11, (-9, 98, -2), (-1, 99, -1)],       # 1 CHILD BONE (TAIL PROPOSAL)
-[12, (-1, 99, -1)],                     # LEAF BONE
-[7, (2, -198, -23)],                    # LEAF BONE
-]
+TR_ENTITY_NAMES_FILEPATH = "lib/EntityNames.xml"
+SKELETON_DATA_FILEPATH = "lib_user/SkeletonData.xml"
 
 def process_pdp(filepath):
     with open(filepath, 'rb') as f:
@@ -148,7 +130,7 @@ def xml_write_skeleton(game_dir):
         3: ['DATA', 'DATA/LA', 'CUTS']
     }
 
-    tr_entities_filepath = os.path.join(addon_dir, "lib", TR_ENTITY_NAMES_FILENAME)
+    tr_entities_filepath = os.path.join(addon_dir, TR_ENTITY_NAMES_FILEPATH)
     tr_entities_tree = ET.parse(tr_entities_filepath)
     tr_entities_root = tr_entities_tree.getroot()
     
@@ -158,7 +140,7 @@ def xml_write_skeleton(game_dir):
         data_game.set('ID', f'{g_id}')
 
         models = get_game_models(game_dir, g_id, game_subdirs[g_id])
-        
+
         for model in models:
             skel = get_bone_data(model)
             tr_entity = tr_entities_root.find("./game/[@ID='%s']/model/[ID='%s']/name" % (g_id, model['ID']))
@@ -189,5 +171,5 @@ def xml_write_skeleton(game_dir):
     if not os.path.exists(userlib_dir):
         os.makedirs(userlib_dir)
 
-    xml_filepath = os.path.join(userlib_dir, SKELETON_DATA_FILENAME)
+    xml_filepath = os.path.join(addon_dir, SKELETON_DATA_FILEPATH)
     tree.write(xml_filepath, encoding='utf-8', xml_declaration=True)

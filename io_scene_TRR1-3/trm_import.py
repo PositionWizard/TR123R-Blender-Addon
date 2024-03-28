@@ -1,8 +1,11 @@
 import bpy, math, random, subprocess, time
 from struct import unpack
+from mathutils import Vector
 import os.path as Path
 from . import bin_parse
 from . import utils as trm_utils
+from .pdp_utils import SKELETON_DATA_FILEPATH
+import xml.etree.ElementTree as ET
 
 def NormalBYTE2FLOAT(x, y, z):
     x = x - 127
@@ -11,7 +14,7 @@ def NormalBYTE2FLOAT(x, y, z):
     length = math.sqrt((x * x) + (y * y) + (z * z))
     return (x / length, y / length, z / length)
 
-def CreateVertexGroups(trm, joints, armature, filepath):
+def CreateVertexGroups(trm, joints, rig, bones, armature, filename):
     # possible vertex group names, 10 per line for easier counting
     vg_names = [
         "root", "hips", "stomach", "chest", "torso", "neck", "head", "jaw", "jaw_lower", "jaw_upper",
@@ -46,7 +49,7 @@ def CreateVertexGroups(trm, joints, armature, filepath):
     # decide which list to use
     if armature == 'AUTO':
         for k in vg_names_map.keys():
-            if k in filepath:
+            if k in filename:
                 armature = vg_names_map[k]
                 break
 
@@ -56,12 +59,16 @@ def CreateVertexGroups(trm, joints, armature, filepath):
 
     len1 = len(gl)
     len2 = len(vg_names)
+    skel_size = len(rig.pose.bones) if rig and bones else 0
     for n in range(joints):
         if n < len1 and gl[n] < len2:
             name = vg_names[gl[n]]
         else:
             name = "Joint" + str(n)
         trm.vertex_groups.new(name=name)
+        if skel_size and n < skel_size:
+            pb = rig.pose.bones[bones[n]]
+            pb.name = name
 
 
 from bpy_extras.io_utils import ImportHelper
@@ -137,6 +144,14 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
         name="Merge by UVs",
         description="Tries to weld non-manifold edges, resulting in mesh welding along UV seams.\n"
                     "Helps with shading and mesh editing",
+        default=True
+    )
+
+    connect_bones: BoolProperty(
+        name="Connect Bones",
+        description="Try to connect parent bones to the children bones on imported Armatures.\n\n"
+                    "May look weird with some things like breakable floor, glass, etc.\n"
+                    "Disabling it will point all bones in the Armature object's direction.",
         default=True
     )
 
@@ -341,7 +356,78 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
 
             trm_utils.space_out_nodes(nodes_to_align)
 
-    def read_trm_data(self, context, filepath, addon_prefs, filename):
+    def create_armature(self, filename, skeldata_path, trm):
+        def setup_armature(rig):
+            trm.parent = rig
+            mod = trm.modifiers.new('TRM Armature', 'ARMATURE')
+            mod.object = rig
+
+        # PLACEHOLDER
+        lara_paths = {
+            "OUTFIT_": 'Lara',
+            "HOLSTER_": 'Lara',
+            "HAND_": 'Lara',
+        }
+
+        bone_names = []
+        #TODO: Handle other TRMs by replacing entity names with TRM names in the xml
+        # get substring of a TRM name matching dict's keys
+        trm_substr = next(iter([subname for subname in lara_paths.keys() if subname in filename]), "")
+        if trm_substr:
+            # Look for a first armature with a name having the same substring as one found in TRM name
+            ob_name = next(iter([ob.name for ob in bpy.context.collection.objects if trm_substr in ob.name and ob.type == 'ARMATURE']), "")
+            if ob_name:
+                rig = bpy.context.collection.objects.get(ob_name)
+                setup_armature(rig)
+                return rig, bone_names
+                
+            saved_active = bpy.context.active_object
+            rig_name = f'Rig_{filename}'
+            armature = bpy.data.armatures.new(rig_name)
+            rig = bpy.data.objects.new(rig_name, armature)
+            bpy.context.collection.objects.link(rig)
+            setup_armature(rig)
+
+            bpy.context.view_layer.objects.active = rig
+            saved_mode = bpy.context.mode
+            bpy.ops.object.mode_set(mode='EDIT')
+
+            e_bones = armature.edit_bones
+
+            skeldata = ET.parse(skeldata_path)
+            skeldata_root = skeldata.getroot()
+
+            #TODO: Handle files based on a game number
+            skeldata_arm = skeldata_root.find("./Game/Armature/[@name='%s']" % lara_paths[trm_substr])
+            skeldata_bones = skeldata_arm.findall("./Bone")
+            for skeldata_bone in skeldata_bones:
+                p_ID = int(skeldata_bone.attrib['p_ID'])
+                skeldata_bone_head = skeldata_bone.find("./Data/[@type='HEAD']")
+                skeldata_bone_tail = skeldata_bone.find("./Data/[@type='TAIL']")
+
+                bone = e_bones.new(f'Bone')
+                b_head = Vector(eval(skeldata_bone_head.attrib['Vector']))
+                bone.head = Vector((b_head.x, b_head.z, b_head.y)) * -self.scale
+                if self.connect_bones and skeldata_bone_tail is not None:
+                    b_tail = Vector(eval(skeldata_bone_tail.attrib['Vector']))
+                    bone.tail = Vector((b_tail.x, b_tail.z, b_tail.y)) * -self.scale
+                else:
+                    bone.tail = Vector((0, -64, 0)) * -self.scale
+                bone.tail += bone.head
+                if p_ID > -1:
+                    bone.parent = e_bones[p_ID]
+                    bone.translate(bone.parent.head)
+
+                bone_names.append(bone.name)
+
+            bpy.ops.object.mode_set(mode=saved_mode)
+            bpy.context.view_layer.objects.active = saved_active            
+        else:
+            rig = None
+
+        return rig, bone_names
+    
+    def read_trm_data(self, context, filepath, addon_prefs, filename, skeldata_path):
         print("IMPORTING...")
         f = open(filepath, 'rb')
 
@@ -559,9 +645,12 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
             for i in p.loop_indices:
                 v = trm_mesh.loops[i].vertex_index
                 uvs.data[i].uv = (vertices[v][10] / 255, (255 - vertices[v][14]) / 255)
+        
+        # CREATE ARMATURE
+        rig, bone_names = self.create_armature(filename, skeldata_path, trm)
 
         # CREATE & ASSIGN VERTEX GROUPS
-        CreateVertexGroups(trm, max_joint + 1, self.mesh_type, filepath)
+        CreateVertexGroups(trm, max_joint + 1, rig, bone_names, self.mesh_type, filename)
         for n in range(num_vertices):
             g = trm.vertex_groups
             v = vertices[n]
@@ -634,10 +723,20 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
             self.report({'WARNING'}, f'Wrong DDS Converter path or file type: "{texconv_path}", skipping texture conversion...')
             self.skip_texconv = True
 
+        addon_dir = os.path.dirname(__file__)
+        skeldata_path = os.path.join(addon_dir, SKELETON_DATA_FILEPATH)
+        is_skeldata = os.path.exists(skeldata_path)
+
         for f in self.files:
             filepath = Path.join(self.directory, f.name)
+            # Generate missing SkeletonData.xml on a first import that can create an armature
+            # TODO: Support more/all TRMs - this will require pairing TRM names with model IDs
+            if not is_skeldata:
+                print("Generating Skeleton Data...")
+                bpy.ops.io_tombraider123r.generate_skeleton_data()
+
             obj_name = str(f.name).removesuffix(self.filename_ext)
-            result = self.read_trm_data(context, filepath, addon_prefs, obj_name)
+            result = self.read_trm_data(context, filepath, addon_prefs, obj_name, skeldata_path)
 
         end_time = time.process_time() - start_time
         if result != {'CANCELLED'}:
@@ -666,6 +765,7 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
         layout.prop(self, 'scale')
         layout.prop(self, 'mesh_type')
         layout.prop(self, 'merge_uv')
+        layout.prop(self, 'connect_bones')
         layout.prop(self, 'use_tex')
 
         if self.use_tex:
