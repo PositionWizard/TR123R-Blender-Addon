@@ -66,7 +66,7 @@ class TR123R_OT_LoadPose(bpy.types.Operator):
             root_mat = p_bones[0].bone.matrix_local.inverted() @ Matrix.Translation(root_loc)
             root_loc = root_mat.translation
             p_bones[0].location = root_loc
-            p_bones[0].keyframe_insert(data_path="location", frame=frame)
+            p_bones[0].keyframe_insert(data_path="location", frame=frame, group=p_bones[0].name)
 
         for f in range(0, max_bones):
             if self.only_selected and p_bones[f] not in sel_p_bones:
@@ -101,7 +101,7 @@ class TR123R_OT_LoadPose(bpy.types.Operator):
             p_bones[f].rotation_mode = rot_order
             p_bones[f].rotation_euler = pb_rot_e
             
-            p_bones[f].keyframe_insert(data_path="rotation_euler", frame=frame)
+            p_bones[f].keyframe_insert(data_path="rotation_euler", frame=frame, group=p_bones[f].name)
     
     def process_line(self, line):
         line = line.strip().upper()
