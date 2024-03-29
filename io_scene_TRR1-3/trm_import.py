@@ -76,7 +76,7 @@ from bpy.props import StringProperty, BoolProperty, EnumProperty, CollectionProp
 from bpy.types import Operator
 import os
 
-class TRM_OT_ImportTRM(Operator, ImportHelper):
+class TR123R_OT_ImportTRM(Operator, ImportHelper):
     """Load object from TRM file"""
     bl_idname = "io_tombraider123r.trm_import"
     bl_label = "Import TRM"
@@ -817,13 +817,8 @@ class TRM_OT_ImportTRM(Operator, ImportHelper):
                 self.tex_dir = 'REL'
                 col.enabled = False
 
-def menu_func_import(self, context):
-    self.layout.operator(TRM_OT_ImportTRM.bl_idname, text=f"Tomb Raider I-III Remastered ({bin_parse.TRM_FORMAT})")
-
 def register():
-    bpy.utils.register_class(TRM_OT_ImportTRM)
-    bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
+    bpy.utils.register_class(TR123R_OT_ImportTRM)
 
 def unregister():
-    bpy.utils.unregister_class(TRM_OT_ImportTRM)
-    bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
+    bpy.utils.unregister_class(TR123R_OT_ImportTRM)

@@ -17,7 +17,7 @@ from bpy.types import Operator
 from . import utils as trm_utils
 from .bin_parse import TRM_HEADER, TRM_FORMAT, TRM_ANIM_FORMAT
 
-class TRM_OT_ExportTRM(Operator, ExportHelper):
+class TR123R_OT_ExportTRM(Operator, ExportHelper):
     """Save object as TRM file"""
     bl_idname = "io_tombraider123r.trm_export"
     bl_label = "Export TRM"
@@ -434,13 +434,8 @@ class TRM_OT_ExportTRM(Operator, ExportHelper):
 def executre(self, context):
     return {'FINISHED'}
 
-def menu_func_export(self, context):
-    self.layout.operator(TRM_OT_ExportTRM.bl_idname, text=f"Tomb Raider I-III Remastered ({TRM_FORMAT})")
-
 def register():
-    bpy.utils.register_class(TRM_OT_ExportTRM)
-    bpy.types.TOPBAR_MT_file_export.append(menu_func_export)
+    bpy.utils.register_class(TR123R_OT_ExportTRM)
 
 def unregister():
-    bpy.utils.unregister_class(TRM_OT_ExportTRM)
-    bpy.types.TOPBAR_MT_file_export.remove(menu_func_export)
+    bpy.utils.unregister_class(TR123R_OT_ExportTRM)
