@@ -1,5 +1,5 @@
 import bpy
-from . import addon_updater_ops, bin_parse, trm_import, trm_export, ops
+from . import addon_updater_ops, bin_parse, trm_import, trm_export, pose_ops, ops
 from . import utils as trm_utils
 
 def update_data_type(self, context, prop, data_type:str):
@@ -176,7 +176,7 @@ class TR123R_PT_ShaderSettings_Eevee(bpy.types.Panel, TRM_PT_ShaderSettings):
     bl_parent_id = "EEVEE_MATERIAL_PT_surface"
 
 class TR123R_MT_ImportMenu(bpy.types.Menu):
-    bl_idname = 'io_tombraider123r.tr123r_import'
+    bl_idname = 'TR123R_MT_import'
     bl_label = "Tomb Raider I-III Remastered"
 
     def draw(self, context):
@@ -184,7 +184,7 @@ class TR123R_MT_ImportMenu(bpy.types.Menu):
         layout.operator(trm_import.TR123R_OT_ImportTRM.bl_idname, text=f"TR123R Model ({bin_parse.TRM_FORMAT})")
 
 class TR123R_MT_ExportMenu(bpy.types.Menu):
-    bl_idname = 'io_tombraider123r.tr123r_export'
+    bl_idname = 'TR123R_MT_export'
     bl_label = "Tomb Raider I-III Remastered"
 
     def draw(self, context):
@@ -192,7 +192,7 @@ class TR123R_MT_ExportMenu(bpy.types.Menu):
         layout.operator(trm_export.TR123R_OT_ExportTRM.bl_idname, text=f"TR123R Model ({bin_parse.TRM_FORMAT})")
         
 class TR123R_PT_UvTools(bpy.types.Panel):
-    bl_label = "TRM Tools"
+    bl_label = "TR123R Tools"
     bl_space_type = "IMAGE_EDITOR"
     bl_region_type = "UI"
     bl_category = "Tool"
@@ -213,6 +213,31 @@ class TR123R_PT_UvTools(bpy.types.Panel):
 
         addon_updater_ops.update_notice_box_ui(self, context)
 
+class TR123R_PT_PoseTools(bpy.types.Panel):
+    bl_label = "TR123R Tools"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Tool"
+
+    @classmethod
+    def poll(cls, context):
+        obj = bpy.context.active_object
+        return obj and obj.type == 'ARMATURE'
+
+    def draw(self, context):     
+        layout = self.layout
+        layout.label(text=pose_ops.TR123R_OT_LoadPose.bl_label)
+        col = layout.column(align=True)
+        row = col.row()
+        op = row.operator(pose_ops.TR123R_OT_LoadPose.bl_idname, text="Apply to All")
+        op.only_selected = False
+        row = col.row()
+        op = row.operator(pose_ops.TR123R_OT_LoadPose.bl_idname, text="Apply to Selected Bones")
+        op.only_selected = True
+        if context.mode != 'POSE':
+            row.enabled = False
+        addon_updater_ops.update_notice_box_ui(self, context)
+
 cls =(
     TR123R_MT_ImportMenu,
     TR123R_MT_ExportMenu,
@@ -221,6 +246,7 @@ cls =(
     TR123R_PT_ShaderSettings_Cycles,
     TR123R_PT_ShaderSettings_Eevee,
     TR123R_PT_UvTools,
+    TR123R_PT_PoseTools,
 )
 
 _register, _unregister = bpy.utils.register_classes_factory(cls)

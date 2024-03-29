@@ -431,9 +431,6 @@ class TR123R_OT_ExportTRM(Operator, ExportHelper):
             self.report({'INFO'}, "Export finished in %.4f sec." % (end_time))
         return result
 
-def executre(self, context):
-    return {'FINISHED'}
-
 def register():
     bpy.utils.register_class(TR123R_OT_ExportTRM)
 

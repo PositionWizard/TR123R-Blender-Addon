@@ -1,7 +1,7 @@
 bl_info = {
-    "name" : "Tomb Raider I-III Remastered - Tools (.TRM)",
+    "name" : "Tomb Raider I-III Remastered - Tools (.TRM, POSE.txt)",
     "author" : "MuruCoder, MaRaider, Czarpos",
-    "description" : "Tools to handle .TRM for Tomb Raider Remastered I-III games.",
+    "description" : "Tools to handle .TRM and POSE.txt files for Tomb Raider Remastered I-III games.",
     "blender" : (4, 0, 0),
     "version" : (0, 6, 3),
     "category": "Import-Export",
@@ -26,13 +26,15 @@ if "bpy" in locals():
         reload(trm_import)
     if "trm_export" in locals():
         reload(trm_export)
+    if "pose_ops" in locals():
+        reload(pose_ops)
     if "ops" in locals():
         reload(ops)
     if "ui" in locals():
         reload(ui)
     del reload
 
-from . import addon_updater_ops, utils, pdp_utils, bin_parse, trm_import, trm_export, ops, ui
+from . import addon_updater_ops, utils, pdp_utils, bin_parse, trm_import, trm_export, pose_ops, ops, ui
 import bpy, os
 
 @addon_updater_ops.make_annotations
@@ -58,7 +60,7 @@ class TR123R_PT_Preferences(bpy.types.AddonPreferences):
 
     tex_conv_directory: bpy.props.StringProperty(
         name="Converted Directory",
-        description='Directory to save converted PNG textures to.\n'
+        description='Directory to save converted PNG textures to.\n\n'
                     'Leave empty to save in TEX/PNGs folder in game directory',
         subtype='DIR_PATH',
         update=lambda s,c: s.make_paths_abs(c, 'tex_conv_directory'),
@@ -67,12 +69,24 @@ class TR123R_PT_Preferences(bpy.types.AddonPreferences):
 
     game_path: bpy.props.StringProperty(
         name="Game Directory",
-        description='Tomb Raider I-III Remastered game main directory.\n'
+        description='Tomb Raider I-III Remastered game main directory.\n\n'
                     'Used to find texture files related to imported model.\n'
-                    'Leave empty to automatically look for textures relative to directory the TRM is in',
+                    'Leave empty to automatically look for textures relatively to directory the TRM is in',
         subtype='DIR_PATH',
         update=lambda s,c: s.make_paths_abs(c, 'game_path'),
         default=""
+    )
+
+    pose_filepath: bpy.props.StringProperty(
+        name="Photo Mode Poses",
+        description='Tomb Raider I-III Remastered POSE.txt filepath for Lara photo mode poses.\n'
+                    'File located in "[Game Directory]/1/DATA/POSE.txt"\n\n'
+                    'Optional field for working outside of game files.\n'
+                    'Path is necessary if Game Directory is not provided!!!\n'
+                    'Leave empty to use POSE.txt based on Game Directory path.',
+        subtype='FILE_PATH',
+        update=lambda s,c: s.make_paths_abs(c, 'pose_filepath'),
+        default="POSE.txt"
     )
 
     # --------------------- Addon updater preferences --------------------- #
@@ -118,6 +132,7 @@ class TR123R_PT_Preferences(bpy.types.AddonPreferences):
         col.prop(self, 'dds_tool_filepath')
         col.prop(self, 'tex_conv_directory')
         col.prop(self, 'game_path')
+        col.prop(self, 'pose_filepath')
 
         col.separator()
 
@@ -150,12 +165,14 @@ def register():
     _register()
     trm_import.register()
     trm_export.register()
+    pose_ops.register()
     ops._register()
     ui.register()
 
 def unregister():
     ui.unregister()
     ops._unregister()
+    pose_ops.unregister()
     trm_export.unregister()
     trm_import.unregister()
     _unregister()
