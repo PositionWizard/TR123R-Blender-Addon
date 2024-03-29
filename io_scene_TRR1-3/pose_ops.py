@@ -32,9 +32,17 @@ class TR123R_OT_LoadPose(bpy.types.Operator):
         default=False
     )
 
+    load_disabled: bpy.props.BoolProperty(
+        name = "Load Disabled Poses",
+        description  = "Allows to load Poses that are present in the file but were disabled.\n\n"
+                        "Enabling this option will always make Pose Number represent what's visible in the game",
+        default=False
+    )
+
     pose_id: bpy.props.IntProperty(
         name = "Pose Number",
-        description="Pose number in Photo Mode",
+        description="Pose number in Photo Mode\n\n"
+                    '''Number will always represent Pose number in the game when "Load Disabled Poses" is enabled''',
         default = 1,
         min = 1
     )
@@ -46,19 +54,23 @@ class TR123R_OT_LoadPose(bpy.types.Operator):
     
     def process_pose(self, rig, pose_data, frame):
         p_bones = rig.pose.bones
+        sel_p_bones = bpy.context.selected_pose_bones_from_active_object
 
         # bone rotations
         angles = pose_data[3].split(', ')
         max_bones = min(len(angles), len(rig.data.bones))
 
         # key hips's location
-        root_loc = Vector((int(pose_data[0])/-TRM_SCALE, int(pose_data[2])/-TRM_SCALE, int(pose_data[1])/-TRM_SCALE))
-        root_mat = p_bones[0].bone.matrix_local.inverted() @ Matrix.Translation(root_loc)
-        root_loc = root_mat.translation
-        p_bones[0].location = root_loc
-        p_bones[0].keyframe_insert(data_path="location", frame=frame)
+        if not self.only_selected or (self.only_selected and p_bones[0] in sel_p_bones):
+            root_loc = Vector((int(pose_data[0])/-TRM_SCALE, int(pose_data[2])/-TRM_SCALE, int(pose_data[1])/-TRM_SCALE))
+            root_mat = p_bones[0].bone.matrix_local.inverted() @ Matrix.Translation(root_loc)
+            root_loc = root_mat.translation
+            p_bones[0].location = root_loc
+            p_bones[0].keyframe_insert(data_path="location", frame=frame)
 
         for f in range(0, max_bones):
+            if self.only_selected and p_bones[f] not in sel_p_bones:
+                continue
             if angles[f].startswith('ZYX('):
                 a = angles[f][4:-1].split(',')
                 rot = []
@@ -93,19 +105,22 @@ class TR123R_OT_LoadPose(bpy.types.Operator):
     
     def process_line(self, line):
         line = line.strip().upper()
-        # get disabled poses
+        # handle disabled poses
         if line.startswith('//') or line.startswith('\\'):
-            line = line[2:].strip()
+            if self.load_disabled:
+                line = line[2:].strip()
+            else:
+                return None
 
         l = line.split(',', 3)
         for i, data in enumerate(l):
             l[i] = data.strip()
 
+        # Ignore BEGIN and END tags
         if len(l) < 3:
-            print("\nIGNORING: ", line)
             return None
-        else:
-            return l
+        
+        return l
     
     def load_pose(self, filepath:str):
         rig = bpy.context.active_object
@@ -115,21 +130,27 @@ class TR123R_OT_LoadPose(bpy.types.Operator):
         else:
             frame = bpy.context.scene.frame_current
 
-        lines = []
+        poses = []
         with open(filepath, 'r') as f:
             for line in f:
-                if self.load_all:
-                    pose_data = self.process_line(line)
-                    if pose_data is not None:
+                pose_data = self.process_line(line)
+                if pose_data is not None:
+                    if self.load_all:
                         self.process_pose(rig, pose_data, frame)
                         frame += 1
-                else:
-                    lines.append(line)
+                    else:
+                        poses.append(pose_data)
 
+            # load single pose
             if not self.load_all:
-                pose_data = self.process_line(lines[self.pose_id])
-                if pose_data is not None:
-                    self.process_pose(rig, pose_data, frame)
+                pose_count = len(poses)
+                if self.pose_id > pose_count:
+                    self.report({'ERROR'}, f'Pose Number: "{self.pose_id}" does not exist. Number of available Poses: "{pose_count}"')
+                    return {'CANCELLED'}
+                pose_data = poses[self.pose_id-1]
+                self.process_pose(rig, pose_data, frame)
+
+        return {'FINISHED'}
 
     def execute(self, context):
         if self.is_custom_path:
@@ -144,9 +165,9 @@ class TR123R_OT_LoadPose(bpy.types.Operator):
                 return {'CANCELLED'}
             
         pose_path = os.path.abspath(pose_path)
-        self.load_pose(pose_path)
+        result = self.load_pose(pose_path)
 
-        return {'FINISHED'}
+        return result
     
     def draw(self, context):
         layout = self.layout
@@ -162,6 +183,8 @@ class TR123R_OT_LoadPose(bpy.types.Operator):
 
         row = col.row()
         row.prop(self, 'load_all')
+        row = col.row()
+        row.prop(self, 'load_disabled')
         row = col.row()
         row.prop(self, 'pose_id')
         if self.load_all:
