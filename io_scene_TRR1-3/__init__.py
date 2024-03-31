@@ -165,14 +165,14 @@ def register():
     _register()
     trm_import.register()
     trm_export.register()
-    pose_ops.register()
+    pose_ops._register()
     ops._register()
     ui.register()
 
 def unregister():
     ui.unregister()
     ops._unregister()
-    pose_ops.unregister()
+    pose_ops._unregister()
     trm_export.unregister()
     trm_import.unregister()
     _unregister()

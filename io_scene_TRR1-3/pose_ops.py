@@ -5,38 +5,15 @@ from .utils import TRM_SCALE
 
 POSE_ANGLE_SCALE = 1024
 
-class TR123R_OT_LoadPose(bpy.types.Operator):
-    bl_idname = "io_tombraider123r.pose_load"
-    bl_label = "Load Photo Mode Pose"
-    bl_description = "Loads a chosen Lara's pose to active Armature from POSE.txt.\nPath can be set in addon preferences"
-    bl_options = {'UNDO'}
-
+class TR123R_OT_PoseHandler:
     addon_prefs: bpy.types.AddonPreferences = None
     pose_path_exists = False
 
-    only_selected: bpy.props.BoolProperty(
-        name = "",
-        default = False,
-    )
-
     is_custom_path: bpy.props.BoolProperty(
         name = "Use Explicit Path",
-        description  = "Load POSE.txt from custom Photo Mode Poses filepath provided in addon prefernces.\n\n"
-                        "Disale to load from Game Directory",
+        description  = "Use POSE.txt from custom Photo Mode Poses filepath provided in addon prefernces.\n\n"
+                        "Disale to use one from Game Directory",
         default=False,
-    )
-
-    load_all: bpy.props.BoolProperty(
-        name = "Load All as Animation",
-        description  = "Import all Poses into an Action, each one on a different frame",
-        default=False
-    )
-
-    load_disabled: bpy.props.BoolProperty(
-        name = "Load Disabled Poses",
-        description  = "Allows to load Poses that are present in the file but were disabled.\n\n"
-                        "Enabling this option will always make Pose Number represent what's visible in the game",
-        default=False
     )
 
     pose_id: bpy.props.IntProperty(
@@ -52,6 +29,76 @@ class TR123R_OT_LoadPose(bpy.types.Operator):
         obj = bpy.context.active_object
         return obj and obj.type == 'ARMATURE'
     
+    def exec_pose(self, pose_path:str):
+        return {'FINISHED'}
+
+    def execute(self, context):
+        if self.is_custom_path:
+            pose_path = self.addon_prefs.pose_filepath
+            if not self.pose_path_exists:
+                self.report({'ERROR'}, f'Could not find "POSE.txt" file.\nWrong Photo Mode Poses path: "{self.addon_prefs.pose_filepath}"\nCheck your paths in addon preferences.')
+                return {'CANCELLED'}
+        else:
+            pose_path = os.path.join(self.addon_prefs.game_path, '1/DATA/POSE.TXT')
+            if not os.path.exists(pose_path):
+                self.report({'ERROR'}, f'Could not find "POSE.txt" file.\n"{self.addon_prefs.game_path}" is not a Game Directory!\nCheck your paths in addon preferences.')
+                return {'CANCELLED'}
+            
+        pose_path = os.path.abspath(pose_path)
+        result = self.exec_pose(pose_path)
+
+        return result
+    
+    def draw_extra(self, context: bpy.types.Context, col:bpy.types.UILayout):
+        pass
+    
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False  # No animation.
+
+        flow = layout.grid_flow()
+        col = flow.column_flow()
+        row = col.row()
+        row.prop(self, 'is_custom_path')
+        row.enabled = self.pose_path_exists
+
+        self.draw_extra(context, col)
+
+    def invoke(self, context, event):
+        self.addon_prefs = bpy.context.preferences.addons[__package__].preferences
+        pose_path_ext = os.path.splitext(self.addon_prefs.pose_filepath)[1]
+        self.pose_path_exists = os.path.exists(self.addon_prefs.pose_filepath) and pose_path_ext.casefold() == '.txt'
+        if not self.pose_path_exists:
+            self.is_custom_path = False
+
+        return context.window_manager.invoke_props_dialog(self)
+
+class TR123R_OT_LoadPose(bpy.types.Operator, TR123R_OT_PoseHandler):
+    bl_idname = "io_tombraider123r.pose_load"
+    bl_label = "Load Photo Mode Pose"
+    bl_description = "Loads a chosen Lara's pose to active Armature from POSE.txt.\nPath can be set in addon preferences"
+    bl_options = {'UNDO'}
+
+    only_selected: bpy.props.BoolProperty(
+        name = "Only Selected Bones",
+        description = "Load Poses only to selected Pose Bones",
+        default = False,
+    )
+
+    load_all: bpy.props.BoolProperty(
+        name = "Load All as Animation",
+        description  = "Import all Poses into an Action, each one on a different frame",
+        default=False
+    )
+
+    load_disabled: bpy.props.BoolProperty(
+        name = "Load Disabled Poses",
+        description  = "Allows to load Poses that are present in the file but were disabled.\n\n"
+                        "Enabling this option will always make Pose Number represent what's visible in the game",
+        default=False
+    )
+
     def process_pose(self, rig, pose_data, frame):
         p_bones = rig.pose.bones
         sel_p_bones = bpy.context.selected_pose_bones_from_active_object
@@ -151,57 +198,98 @@ class TR123R_OT_LoadPose(bpy.types.Operator):
                 self.process_pose(rig, pose_data, frame)
 
         return {'FINISHED'}
-
-    def execute(self, context):
-        if self.is_custom_path:
-            pose_path = self.addon_prefs.pose_filepath
-            if not self.pose_path_exists:
-                self.report({'ERROR'}, f'Could not find "POSE.txt" file.\nWrong Photo Mode Poses path: "{self.addon_prefs.pose_filepath}"\nCheck your paths in addon preferences.')
-                return {'CANCELLED'}
-        else:
-            pose_path = os.path.join(self.addon_prefs.game_path, '1/DATA/POSE.TXT')
-            if not os.path.exists(pose_path):
-                self.report({'ERROR'}, f'Could not find "POSE.txt" file.\n"{self.addon_prefs.game_path}" is not a Game Directory!\nCheck your paths in addon preferences.')
-                return {'CANCELLED'}
-            
-        pose_path = os.path.abspath(pose_path)
-        result = self.load_pose(pose_path)
-
-        return result
     
-    def draw(self, context):
-        layout = self.layout
-        layout.use_property_split = True
-        layout.use_property_decorate = False  # No animation.
-
-        flow = layout.grid_flow()
-        col = flow.column_flow()
-        row = col.row()
-        row.prop(self, 'is_custom_path')
-        if not self.pose_path_exists:
-            row.enabled = False
-
-        row = col.row()
-        row.prop(self, 'load_all')
+    def draw_extra(self, context, col):
         row = col.row()
         row.prop(self, 'load_disabled')
         row = col.row()
-        row.prop(self, 'pose_id')
-        if self.load_all:
+        row.prop(self, 'only_selected')
+        if context.mode != 'POSE':
             row.enabled = False
+        if not self.load_all:
+            row = col.row()
+            row.prop(self, 'pose_id')
 
-    def invoke(self, context, event):
-        self.addon_prefs = bpy.context.preferences.addons[__package__].preferences
-        pose_path_ext = os.path.splitext(self.addon_prefs.pose_filepath)[1]
-        self.pose_path_exists = os.path.exists(self.addon_prefs.pose_filepath) and pose_path_ext.casefold() == '.txt'
-        if not self.pose_path_exists:
-            self.is_custom_path = False
+    exec_pose = load_pose
 
-        return context.window_manager.invoke_props_dialog(self)
+def upd_start(self, context, start_attr, end_attr):
+    start = getattr(self, start_attr)
+    end = getattr(self, end_attr)
 
+    if end <= start:
+        setattr(self, end_attr, (start+1))
 
-def register():
-    bpy.utils.register_class(TR123R_OT_LoadPose)
+def upd_end(self, context, start_attr, end_attr):
+    start = getattr(self, start_attr)
+    end = getattr(self, end_attr)
+    
+    if start >= end:
+        setattr(self, start_attr, (end-1))
 
-def unregister():
-    bpy.utils.unregister_class(TR123R_OT_LoadPose)
+class TR123R_OT_SavePose(bpy.types.Operator, TR123R_OT_PoseHandler):
+    bl_idname = "io_tombraider123r.pose_save"
+    bl_label = "Save Photo Mode Pose"
+    bl_description = "Saves current Pose or Action of active Armature to POSE.txt.\nPath can be set in addon preferences"
+
+    save_many: bpy.props.BoolProperty(
+        name = "Save from Action",
+        description  = "Export Poses from current Action, replacing Poses by frame numbers that keyframes are on",
+        default=False
+    )
+
+    add_new: bpy.props.BoolProperty(
+        name = "Add Pose to Existing",
+        description  = "Saves as a new Pose.\n\n"
+                        "Disabling it will save by replacing the Pose on either a current frame number or a specified Pose Number option",
+        default=True
+    )
+
+    frame_start: bpy.props.IntProperty(
+            name="From:",
+            description="Frame the first Pose is on",
+            default=1,
+            min=1,
+            update=lambda s,c: upd_start(s,c, 'frame_start', 'frame_end')
+            )
+
+    frame_end: bpy.props.IntProperty(
+            name="To:",
+            description="Frame the last Pose is on",
+            default=7,
+            min=1,
+            update=lambda s,c: upd_end(s,c, 'frame_start', 'frame_end')
+            )
+
+    def save_pose(self, filepath):
+        return {'FINISHED'}
+    
+    exec_pose = save_pose
+    
+    def draw_extra(self, context, col):
+        row = col.row()
+        row.prop(self, 'add_new')
+
+        if self.save_many:
+            row = col.row()
+            rowsplit = row.split(factor = 0.4)
+            rowsplit.alignment = 'RIGHT'
+            rowsplit.label(text="From Frame Range:")
+            props = rowsplit.split(factor=0.5, align=True)
+            props.use_property_split = False
+            props.prop(self, 'frame_start')
+            props.prop(self, 'frame_end')
+
+            pose_id_text="Replace at Pose"
+        else:
+            pose_id_text="Replace Pose"
+
+        row = col.row()
+        row.prop(self, 'pose_id', text=pose_id_text)
+        row.enabled = not self.add_new
+
+cls = (
+    TR123R_OT_LoadPose,
+    TR123R_OT_SavePose,
+)
+
+_register, _unregister = bpy.utils.register_classes_factory(cls)

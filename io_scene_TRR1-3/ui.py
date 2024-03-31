@@ -226,16 +226,25 @@ class TR123R_PT_PoseTools(bpy.types.Panel):
 
     def draw(self, context):     
         layout = self.layout
-        layout.label(text=pose_ops.TR123R_OT_LoadPose.bl_label)
-        col = layout.column(align=True)
+        box = layout.box()
+        col = box.column(align=True)
+        col.label(text=pose_ops.TR123R_OT_LoadPose.bl_label)
         row = col.row()
-        op = row.operator(pose_ops.TR123R_OT_LoadPose.bl_idname, text="Apply to All")
-        op.only_selected = False
+        op = row.operator(pose_ops.TR123R_OT_LoadPose.bl_idname, text="Load Pose")
+        op.load_all = False
         row = col.row()
-        op = row.operator(pose_ops.TR123R_OT_LoadPose.bl_idname, text="Apply to Selected Bones")
-        op.only_selected = True
-        if context.mode != 'POSE':
-            row.enabled = False
+        op = row.operator(pose_ops.TR123R_OT_LoadPose.bl_idname, text="Load All Poses")
+        op.load_all = True
+
+        col = box.column(align=True)
+        col.label(text=pose_ops.TR123R_OT_SavePose.bl_label)
+        row = col.row()
+        op = row.operator(pose_ops.TR123R_OT_SavePose.bl_idname, text="Save Current Pose")
+        op.save_many = False
+        row = col.row()
+        op = row.operator(pose_ops.TR123R_OT_SavePose.bl_idname, text="Save Multiple Poses")
+        op.save_many = True
+
         addon_updater_ops.update_notice_box_ui(self, context)
 
 cls =(
