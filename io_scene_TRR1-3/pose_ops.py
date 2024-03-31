@@ -13,7 +13,7 @@ class TR123R_OT_PoseHandler:
         name = "Use Explicit Path",
         description  = "Use POSE.txt from custom Photo Mode Poses filepath provided in addon prefernces.\n\n"
                         "Disale to use one from Game Directory",
-        default=False,
+        default=True,
     )
 
     pose_id: bpy.props.IntProperty(
@@ -92,11 +92,11 @@ class TR123R_OT_LoadPose(bpy.types.Operator, TR123R_OT_PoseHandler):
         default=False
     )
 
-    load_disabled: bpy.props.BoolProperty(
-        name = "Load Disabled Poses",
-        description  = "Allows to load Poses that are present in the file but were disabled.\n\n"
-                        "Enabling this option will always make Pose Number represent what's visible in the game",
-        default=False
+    ignore_disabled: bpy.props.BoolProperty(
+        name = "Skip Disabled Poses",
+        description  = "Ignores Poses that are present in the file but were disabled.\n\n"
+                        "Disabling this option will always make Pose Number represent what's visible in the game",
+        default=True
     )
 
     def process_pose(self, rig, pose_data, frame):
@@ -154,10 +154,9 @@ class TR123R_OT_LoadPose(bpy.types.Operator, TR123R_OT_PoseHandler):
         line = line.strip().upper()
         # handle disabled poses
         if line.startswith('//') or line.startswith('\\'):
-            if self.load_disabled:
-                line = line[2:].strip()
-            else:
+            if self.ignore_disabled:
                 return None
+            line = line[2:].strip()
 
         l = line.split(',', 3)
         for i, data in enumerate(l):
@@ -201,7 +200,7 @@ class TR123R_OT_LoadPose(bpy.types.Operator, TR123R_OT_PoseHandler):
     
     def draw_extra(self, context, col):
         row = col.row()
-        row.prop(self, 'load_disabled')
+        row.prop(self, 'ignore_disabled')
         row = col.row()
         row.prop(self, 'only_selected')
         if context.mode != 'POSE':
@@ -249,12 +248,81 @@ class TR123R_OT_SavePose(bpy.types.Operator, TR123R_OT_PoseHandler):
     frame_end: bpy.props.IntProperty(
             name="To:",
             description="Frame the last Pose is on",
-            default=7,
+            default=250,
             min=1,
             update=upd_end
             )
 
     def save_pose(self, filepath):
+        with open(filepath, 'r+') as f:
+            data = f.readlines()
+            f.seek(0)
+
+            # filter out pose lines and tag them by 'enabled' sign
+            poses = []
+            num_poses_enabled = 0
+            for line in data:
+                l = line.strip().upper()
+                line_state = dict()
+                line_state['data'] = l
+
+                # Skip disabled lines
+                if l.startswith('//') or l.startswith('\\'):
+                    line_state['enabled'] = False
+                    poses.append(line_state)
+                    continue
+
+                l = l.split(',', 3)
+                for str_i, substr in enumerate(l):
+                    l[str_i] = substr.strip()
+
+                # Skip BEGIN and END tags
+                if len(l) < 3:
+                    continue
+
+                line_state['enabled'] = True
+                num_poses_enabled += 1
+                poses.append(line_state)
+
+            if not self.add_new and self.pose_id > num_poses_enabled:
+                self.report({'ERROR'}, f'Pose Number: "{self.pose_id}" does not exist. Number of available Poses: "{num_poses_enabled}"')
+                return {'CANCELLED'}
+            
+            test_lines = [f'0, 0, 0, POSE_{n}' for n in range(1,5)]
+            f.write('BEGIN\n')
+            i = 1
+            for pose in poses:
+                l = pose['data']
+
+                # replace pose on the correct ID
+                if pose['enabled'] and i == self.pose_id and not self.add_new:
+                    # replace a sequence of poses starting at ID
+                    if self.save_many:
+                        for tl in test_lines:
+                            f.write(tl+'\n')
+                    # otherwise replace a single pose
+                    else:
+                        f.write(test_lines[0]+'\n')
+                # otherwise write the original line
+                else:
+                    f.write(pose['data']+'\n')
+
+                # skip disabled poses for proper indexing
+                if not pose['enabled']:
+                    continue
+
+                i+=1
+
+            # add new poses to the list's end
+            if self.add_new:
+                if self.save_many:
+                    for tl in test_lines:
+                        f.write(tl+'\n')
+                else:
+                    f.write(test_lines[0]+'\n')
+            f.write('END')
+            f.truncate()
+            
         return {'FINISHED'}
     
     exec_pose = save_pose
