@@ -252,16 +252,16 @@ class TR123R_OT_SavePose(bpy.types.Operator, TR123R_OT_PoseHandler):
             min=1,
             update=upd_end
             )
-
-    def save_pose(self, filepath):
+    
+    def write_pose(self, filepath, poses:list):
         with open(filepath, 'r+') as f:
-            data = f.readlines()
+            f_data = f.readlines()
             f.seek(0)
 
             # filter out pose lines and tag them by 'enabled' sign
-            poses = []
+            pose_lines = []
             num_poses_enabled = 0
-            for line in data:
+            for line in f_data:
                 l = line.strip().upper()
                 line_state = dict()
                 line_state['data'] = l
@@ -269,7 +269,7 @@ class TR123R_OT_SavePose(bpy.types.Operator, TR123R_OT_PoseHandler):
                 # Skip disabled lines
                 if l.startswith('//') or l.startswith('\\'):
                     line_state['enabled'] = False
-                    poses.append(line_state)
+                    pose_lines.append(line_state)
                     continue
 
                 l = l.split(',', 3)
@@ -282,46 +282,70 @@ class TR123R_OT_SavePose(bpy.types.Operator, TR123R_OT_PoseHandler):
 
                 line_state['enabled'] = True
                 num_poses_enabled += 1
-                poses.append(line_state)
+                pose_lines.append(line_state)
 
             if not self.add_new and self.pose_id > num_poses_enabled:
                 self.report({'ERROR'}, f'Pose Number: "{self.pose_id}" does not exist. Number of available Poses: "{num_poses_enabled}"')
                 return {'CANCELLED'}
             
-            test_lines = [f'0, 0, 0, POSE_{n}' for n in range(1,5)]
             f.write('BEGIN\n')
-            i = 1
-            for pose in poses:
-                l = pose['data']
+            pose_num = 1
+            n = 0
+            while n < len(pose_lines):
+                l = pose_lines[n]['data']
+                print(f'Line: {n}')
 
                 # replace pose on the correct ID
-                if pose['enabled'] and i == self.pose_id and not self.add_new:
-                    # replace a sequence of poses starting at ID
+                if pose_lines[n]['enabled'] and (pose_num == self.pose_id) and not self.add_new:
+                    # replace a sequence of enabled poses starting at ID
                     if self.save_many:
-                        for tl in test_lines:
-                            f.write(tl+'\n')
+                        # Loop through poses to save and advance in parallel
+                        # the main pose list to replace enabled lines only
+                        # and add ones at the end of file if went beyond original range
+                        j = 0
+                        while j < len(poses):
+                            # write original disabled pose if found
+                            # and wait for the enabled one or the list's end
+                            if n < len(pose_lines) and not pose_lines[n]['enabled']:
+                                f.write(pose_lines[n]['data']+'\n')
+                            # write next pose and advance to next
+                            else:
+                                f.write(poses[j]+'\n')
+                                j+=1
+                            # advance main pose list
+                            n+=1
+                        # retreat main pose list to keep it on track with current line
+                        n-=1
+                        if n >= len(pose_lines):
+                            break
                     # otherwise replace a single pose
                     else:
-                        f.write(test_lines[0]+'\n')
+                        f.write(poses[0]+'\n')
                 # otherwise write the original line
                 else:
-                    f.write(pose['data']+'\n')
+                    f.write(pose_lines[n]['data']+'\n')
 
                 # skip disabled poses for proper indexing
-                if not pose['enabled']:
+                if not pose_lines[n]['enabled']:
+                    n+=1
                     continue
 
-                i+=1
+                pose_num+=1
+                n+=1
 
             # add new poses to the list's end
             if self.add_new:
                 if self.save_many:
-                    for tl in test_lines:
-                        f.write(tl+'\n')
+                    for p in poses:
+                        f.write(p+'\n')
                 else:
-                    f.write(test_lines[0]+'\n')
+                    f.write(poses[0]+'\n')
             f.write('END')
             f.truncate()
+
+    def save_pose(self, filepath):
+        test_poses = [f'0, 0, 0, POSE_{n}' for n in range(1,5)]
+        self.write_pose(filepath, test_poses)
             
         return {'FINISHED'}
     
