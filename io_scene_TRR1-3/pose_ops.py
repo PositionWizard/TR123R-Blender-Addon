@@ -212,20 +212,6 @@ class TR123R_OT_LoadPose(bpy.types.Operator, TR123R_OT_PoseHandler):
 
     exec_pose = load_pose
 
-def upd_start(self, context, start_attr, end_attr):
-    start = getattr(self, start_attr)
-    end = getattr(self, end_attr)
-
-    if end <= start:
-        setattr(self, end_attr, (start+1))
-
-def upd_end(self, context, start_attr, end_attr):
-    start = getattr(self, start_attr)
-    end = getattr(self, end_attr)
-    
-    if start >= end:
-        setattr(self, start_attr, (end-1))
-
 class TR123R_OT_SavePose(bpy.types.Operator, TR123R_OT_PoseHandler):
     bl_idname = "io_tombraider123r.pose_save"
     bl_label = "Save Photo Mode Pose"
@@ -244,12 +230,20 @@ class TR123R_OT_SavePose(bpy.types.Operator, TR123R_OT_PoseHandler):
         default=True
     )
 
+    def upd_start(self, context):
+        if self.frame_end <= self.frame_start:
+            self.frame_end = self.frame_start+1
+
+    def upd_end(self, context):
+        if self.frame_start >= self.frame_end:
+            self.frame_start = self.frame_end-1
+
     frame_start: bpy.props.IntProperty(
             name="From:",
             description="Frame the first Pose is on",
             default=1,
             min=1,
-            update=lambda s,c: upd_start(s,c, 'frame_start', 'frame_end')
+            update=upd_start
             )
 
     frame_end: bpy.props.IntProperty(
@@ -257,7 +251,7 @@ class TR123R_OT_SavePose(bpy.types.Operator, TR123R_OT_PoseHandler):
             description="Frame the last Pose is on",
             default=7,
             min=1,
-            update=lambda s,c: upd_end(s,c, 'frame_start', 'frame_end')
+            update=upd_end
             )
 
     def save_pose(self, filepath):
