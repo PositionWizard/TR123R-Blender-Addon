@@ -1,9 +1,10 @@
 import bpy, os
 from mathutils import Vector, Euler, Matrix
-from math import radians, degrees
+from math import tau
 from .utils import TRM_SCALE
 
 POSE_ANGLE_SCALE = 1024
+POSE_ROTATION_ORDER = 'YXZ'
 
 class TR123R_OT_PoseHandler:
     addon_prefs: bpy.types.AddonPreferences = None
@@ -13,7 +14,7 @@ class TR123R_OT_PoseHandler:
         name = "Use Explicit Path",
         description  = "Use POSE.txt from custom Photo Mode Poses filepath provided in addon prefernces.\n\n"
                         "Disale to use one from Game Directory",
-        default=True,
+        default=False,
     )
 
     pose_id: bpy.props.IntProperty(
@@ -99,7 +100,13 @@ class TR123R_OT_LoadPose(bpy.types.Operator, TR123R_OT_PoseHandler):
         default=True
     )
 
-    def process_pose(self, rig, pose_data, frame):
+    auto_key: bpy.props.BoolProperty(
+        name = "Auto-Key",
+        description  = "Automatically Insert Keyframes for imported pose into an active or a new Action",
+        default=False
+    )
+
+    def process_pose(self, rig, pose_data, frame, add_keys):
         p_bones = rig.pose.bones
         sel_p_bones = bpy.context.selected_pose_bones_from_active_object
 
@@ -113,7 +120,8 @@ class TR123R_OT_LoadPose(bpy.types.Operator, TR123R_OT_PoseHandler):
             root_mat = p_bones[0].bone.matrix_local.inverted() @ Matrix.Translation(root_loc)
             root_loc = root_mat.translation
             p_bones[0].location = root_loc
-            p_bones[0].keyframe_insert(data_path="location", frame=frame, group=p_bones[0].name)
+            if add_keys:
+                p_bones[0].keyframe_insert(data_path="location", frame=frame, group=p_bones[0].name)
 
         for f in range(0, max_bones):
             if self.only_selected and p_bones[f] not in sel_p_bones:
@@ -123,19 +131,17 @@ class TR123R_OT_LoadPose(bpy.types.Operator, TR123R_OT_PoseHandler):
                 rot = []
                 for axis in reversed(a):
                     v = -int(axis.strip()) % POSE_ANGLE_SCALE
-                    v = (v / POSE_ANGLE_SCALE) * 360
+                    v = (v / POSE_ANGLE_SCALE) * tau
                     rot.append(v)
                 x,y,z = rot
             else:
                 # TODO: INTEGER PROCESS LATER !!!
                 x,y,z = [0]*3
             
-            rot_order = 'YXZ'
             # Rotation order doesn't swap values between channels, it's just a gimbal definition
             # but it turns out 'YXZ' is the correct rotation order.
             # Y and Z values still need to be swapped according to the game's coordinate system.
-            trm_rot_e = Euler((radians(x), radians(z), radians(y)), rot_order)
-            print(f'Original XZY Euler: {trm_rot_e}')
+            trm_rot_e = Euler((x,z,y), POSE_ROTATION_ORDER)
             
             arm_b = p_bones[f].bone
             # Create a posebone matrix rotated in armature-space
@@ -143,23 +149,13 @@ class TR123R_OT_LoadPose(bpy.types.Operator, TR123R_OT_PoseHandler):
             # which means to get correct results, bones would either need to have their orientation
             # be the same as armature object iteslf or matrix transformation in armature's object space needs to be made on values
             mat =  arm_b.matrix_local.inverted() @ trm_rot_e.to_matrix().to_4x4() @ arm_b.matrix_local
-            pb_rot_e = mat.to_euler(rot_order)
-            print(f'Converted XZY Euler: {pb_rot_e}')
+            pb_rot_e = mat.to_euler(POSE_ROTATION_ORDER)
             
-            p_bones[f].rotation_mode = rot_order
+            p_bones[f].rotation_mode = POSE_ROTATION_ORDER
             p_bones[f].rotation_euler = pb_rot_e
-
-            # # convert back tests
-            # pb_rot_e1 = p_bones[f].matrix.to_euler(rot_order)
-            # print(f'Blender Decomposed XZY Euler: {pb_rot_e1} (Should be same as Converted)')
             
-            # # mat = arm_b.matrix_local @ pb_rot_e.to_matrix().to_4x4() @ arm_b.matrix_local.inverted()
-            # mat = arm_b.matrix_local @ p_bones[f].matrix_basis @ arm_b.matrix_local.inverted()
-            # pb_rot_e2 = mat.to_euler(rot_order)
-            # print(f'Converted Back XZY Euler: {pb_rot_e2} (Should be same as Original)')
-            # p_bones[f].rotation_euler = pb_rot_e2
-            
-            p_bones[f].keyframe_insert(data_path="rotation_euler", frame=frame, group=p_bones[f].name)
+            if add_keys:
+                p_bones[f].keyframe_insert(data_path="rotation_euler", frame=frame, group=p_bones[f].name)
     
     def process_line(self, line):
         line = line.strip().upper()
@@ -181,6 +177,12 @@ class TR123R_OT_LoadPose(bpy.types.Operator, TR123R_OT_PoseHandler):
     
     def load_pose(self, filepath:str):
         rig = bpy.context.active_object
+        action = rig.animation_data.action
+        add_keys = self.load_all or (self.auto_key and not self.load_all)
+        if not action and add_keys:
+            action = bpy.data.actions.new('PhotoMode_Poses')
+            rig.animation_data.action = action
+
         bpy.context.scene.frame_start = 1
         if self.load_all:
             frame = 1
@@ -193,7 +195,7 @@ class TR123R_OT_LoadPose(bpy.types.Operator, TR123R_OT_PoseHandler):
                 pose_data = self.process_line(line)
                 if pose_data is not None:
                     if self.load_all:
-                        self.process_pose(rig, pose_data, frame)
+                        self.process_pose(rig, pose_data, frame, add_keys)
                         frame += 1
                     else:
                         poses.append(pose_data)
@@ -205,20 +207,22 @@ class TR123R_OT_LoadPose(bpy.types.Operator, TR123R_OT_PoseHandler):
                     self.report({'ERROR'}, f'Pose Number: "{self.pose_id}" does not exist. Number of available Poses: "{pose_count}"')
                     return {'CANCELLED'}
                 pose_data = poses[self.pose_id-1]
-                self.process_pose(rig, pose_data, frame)
+                self.process_pose(rig, pose_data, frame, add_keys)
 
         return {'FINISHED'}
     
     def draw_extra(self, context, col):
         row = col.row()
         row.prop(self, 'ignore_disabled')
-        row = col.row()
-        row.prop(self, 'only_selected')
         if context.mode != 'POSE':
             row.enabled = False
         if not self.load_all:
             row = col.row()
             row.prop(self, 'pose_id')
+            row = col.row()
+            row.prop(self, 'auto_key')
+        row = col.row()
+        row.prop(self, 'only_selected')
 
     exec_pose = load_pose
 
@@ -252,14 +256,14 @@ class TR123R_OT_SavePose(bpy.types.Operator, TR123R_OT_PoseHandler):
             name="From:",
             description="Frame the first Pose is on",
             default=1,
-            min=1,
+            min=0,
             update=upd_start
             )
 
     frame_end: bpy.props.IntProperty(
             name="To:",
             description="Frame the last Pose is on",
-            default=250,
+            default=30,
             min=1,
             update=upd_end
             )
@@ -362,40 +366,34 @@ class TR123R_OT_SavePose(bpy.types.Operator, TR123R_OT_PoseHandler):
         for pb in p_bones:
             if pb.bone.use_deform:
                 mat = pb.bone.matrix_local @ pb.matrix_basis @ pb.bone.matrix_local.inverted()
-                pb_rot_e = mat.to_euler('YXZ')
-                rot = [degrees(r) % 360 for r in pb_rot_e]
+                pb_rot_e = mat.to_euler(POSE_ROTATION_ORDER)
+                # remap euler's radians range from [-π, π] to [0, 2π]
+                rot = [r % tau for r in pb_rot_e]
+                # remap rotations from [0, 2π] float range to [1024, 0] integer range
                 for i in range(len(rot)):
                     val = rot[i]
-                    val = round((val / 360) * POSE_ANGLE_SCALE)
+                    val = round((val / tau) * POSE_ANGLE_SCALE)
                     rot[i] = -val % POSE_ANGLE_SCALE
 
                 # axes get saved in ZYX order with Z and Y swapped
                 bone_rots.append('ZYX(%d,%d,%d)' % (rot[1], rot[2], rot[0]))
-
-                # TESTING
-                # if bpy.context.active_pose_bone == pb:
-                #     print('ZYX(%d, %d, %d)' % (rot[1], rot[2], rot[0]))
-                # if bpy.context.active_pose_bone == pb:
-                #     mat = pb.matrix_basis
-                #     rot_order = 'YXZ'
-                #     pb_rot_e = mat.to_euler(rot_order) # YXZ
-                #     pb.rotation_euler = pb_rot_e
-                #     x,y,z = [degrees(r) % 360 for r in pb_rot_e]
-                #     print(f'Converted XZY Euler: {x,y,z}')
-                #     pb.rotation_mode = rot_order
-                #     pb.rotation_euler = (Euler((radians(x),radians(y),radians(z)), rot_order))
-
-        # return '0, 0, 0, POSE'
+                
         return ', '.join(root_loc + bone_rots)
 
     def save_pose(self, filepath):
         rig = bpy.context.active_object
         poses = []
-        poses.append(self.process_pose(rig))
+        if self.save_many:
+            sc = bpy.context.scene
+            saved_frame = sc.frame_current
+            for f in range(self.frame_start, self.frame_end+1):
+                sc.frame_set(f)
+                poses.append(self.process_pose(rig))
+            sc.frame_set(saved_frame)
+        else:
+            poses.append(self.process_pose(rig))
 
-        test_poses = [f'0, 0, 0, POSE_{n}' for n in range(1,5)]
         self.write_pose(filepath, poses)
-            
         return {'FINISHED'}
     
     exec_pose = save_pose
