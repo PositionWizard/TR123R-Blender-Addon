@@ -2,6 +2,8 @@ import bpy, struct
 from typing import NamedTuple
 from mathutils import Vector
 
+TRM_SCALE = 100
+
 SHADER_SUBTYPES = ["A", "B", "C"]
 """List of possible TRM shader subtypes: [A, B, C]"""
 
