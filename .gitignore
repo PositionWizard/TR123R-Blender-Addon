@@ -1,4 +1,6 @@
-__pycache__
+__pycache__/
 *.pyc
-.vscode
+.vscode/
 .dev
+io_scene_trr1-3_updater/
+lib_user/

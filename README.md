@@ -3,24 +3,24 @@
 
 Addon originally started by [MuruCoder](https://github.com/MuruCoder) with my additions, other improvements and structure changes.
   
-You can reach the original creator at **[TombRaiderForums](https://www.tombraiderforums.com/showthread.php?t=228896)** thread. There you can also find me releasing previous versions and engaing in the discussions.
+You can reach the original creator at **[TombRaiderForums](https://www.tombraiderforums.com/showthread.php?t=228896)** thread. There you can also find previous addon versions and possibly catch me discussing.
 
 ## Table of Contents
-- [Features](https://github.com/PositionWizard/TR123R-Blender-Addon#features)
-- [How-to](https://github.com/PositionWizard/TR123R-Blender-Addon#how-to)
-    - [Texture Import](https://github.com/PositionWizard/TR123R-Blender-Addon#texture-import)
-    - [Shader Setup](https://github.com/PositionWizard/TR123R-Blender-Addon#shader-setup)
-        - [Material Name Structure](https://github.com/PositionWizard/TR123R-Blender-Addon#material-name-structure)
-        - [Shader Instances](https://github.com/PositionWizard/TR123R-Blender-Addon#shader-instance)
-        - [TRM Shader Settings](https://github.com/PositionWizard/TR123R-Blender-Addon#trm-shader-settings)
-    - [UV Tool](https://github.com/PositionWizard/TR123R-Blender-Addon#uv-tool)
-        - [Options](https://github.com/PositionWizard/TR123R-Blender-Addon#options)
-    - [Face Animation Data](https://github.com/PositionWizard/TR123R-Blender-Addon#face-animation-data)
-    - [Photo Mode Poses](https://github.com/PositionWizard/TR123R-Blender-Addon#photo-mode-poses)
-        - [Load](https://github.com/PositionWizard/TR123R-Blender-Addon#load)
-        - [Save](https://github.com/PositionWizard/TR123R-Blender-Addon#save)
-        - [Switch State](https://github.com/PositionWizard/TR123R-Blender-Addon#switch-state)
-    - [Skeleton Generator](https://github.com/PositionWizard/TR123R-Blender-Addon#skeleton-generator)
+- [Features](#features)
+- [How-to](#how-to)
+    - [Texture Import](#texture-import)
+    - [Shader Setup](#shader-setup)
+        - [Material Name Structure](#material-name-structure)
+        - [Shader Instances](#shader-instances)
+        - [TRM Shader Settings](#trm-shader-settings)
+    - [UV Tool](#uv-tool)
+        - [Options](#options)
+    - [Face Animation Data](#face-animation-data)
+    - [Photo Mode Poses](#photo-mode-poses)
+        - [Load](#load)
+        - [Save](#save)
+        - [Switch State](#switch-state)
+    - [Skeleton Generator](#skeleton-generator)
 
 ## Features
 - Import/Export of .TRM files (File->Import/Export->Tomb Raider I-III Remastered (.TRM))
