@@ -692,9 +692,10 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
             normal = NormalBYTE2FLOAT(v[3], v[5], v[4])
             trm_normals.append(( -normal[0], -normal[1], -normal[2] ))
 
-        trm_mesh.use_auto_smooth = True
         trm_mesh.normals_split_custom_set_from_vertices(trm_normals)
-        trm_mesh.calc_normals_split()
+        if bpy.app.version < (4,1):
+            trm_mesh.use_auto_smooth = True
+            trm_mesh.calc_normals_split()
         trm_mesh.update()
 
         # merge edges along UV seams
@@ -723,7 +724,17 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
             trm_bmesh.to_mesh(trm_mesh)
             trm_bmesh.free()
 
-            trm_mesh.normals_split_custom_set(split_normals)
+            try:
+                trm_mesh.normals_split_custom_set(split_normals)
+            except Exception as e:
+                self.report({'ERROR'}, f'{e}\nCould not merge mesh by UV seams for "{filename}".\nDisable "Merge by UVs" and try again.')
+                # cleanup created data
+                # (some will remain, it's more work than it's worth to track everything down)
+                for mat in trm_mesh.materials:
+                    bpy.data.materials.remove(mat)
+                bpy.data.meshes.remove(trm_mesh)
+                bpy.data.armatures.remove(rig.data)
+                return {'CANCELLED'}
             trm_mesh.update()
 
         trm_mesh.validate()
