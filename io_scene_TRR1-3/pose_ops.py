@@ -522,7 +522,8 @@ class TR123R_OT_PoseSwitchState(bpy.types.Operator, TR123R_OT_PoseHandler):
     
     def draw_extra(self, context: bpy.types.Context, col:bpy.types.UILayout):
         row = col.row()
-        row.prop(self, 'switch_all')
+        switch_type = "Enable" if self.enable else "Disable"
+        row.prop(self, 'switch_all', text=f'{switch_type} All Poses')
         row = col.row()
         row.prop(self, 'pose_id', text="Pose Line")
         row.enabled = not self.switch_all
