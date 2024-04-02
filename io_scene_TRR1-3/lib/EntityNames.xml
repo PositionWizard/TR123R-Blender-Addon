@@ -46,9 +46,9 @@
         <model><ID>41</ID><name>Lifting door</name></model>
         <model><ID>42</ID><name>Slamming doors</name></model>
         <model><ID>43</ID><name>Sword of Damocles</name></model>
-        <model><ID>44</ID><name>Thor's hammer's handle</name></model>
-        <model><ID>45</ID><name>Thor's hammer's block</name></model>
-        <model><ID>46</ID><name>Thor's lightning ball</name></model>
+        <model><ID>44</ID><name>Thors hammers handle</name></model>
+        <model><ID>45</ID><name>Thors hammers block</name></model>
+        <model><ID>46</ID><name>Thors lightning ball</name></model>
         <model><ID>47</ID><name>Barricade</name></model>
         <model><ID>48</ID><name>Pushable block 1</name></model>
         <model><ID>49</ID><name>Pushable block 2</name></model>
@@ -74,7 +74,7 @@
         <model><ID>70</ID><name>Bridge tilt 2</name></model>
         <model><ID>71</ID><name>Passport (opening)</name></model>
         <model><ID>72</ID><name>Compass</name></model>
-        <model><ID>73</ID><name>Lara's Home photo</name></model>
+        <model><ID>73</ID><name>Laras Home photo</name></model>
         <model><ID>74</ID><name>Animating 1</name></model>
         <model><ID>75</ID><name>Animating 2</name></model>
         <model><ID>76</ID><name>Animating 3</name></model>
@@ -153,7 +153,7 @@
         <model><ID>158</ID><name>Blood</name></model>
         <model><ID>160</ID><name>Smoke</name></model>
         <model><ID>161</ID><name>Centaur statue</name></model>
-        <model><ID>162</ID><name>Natla's Mines shack</name></model>
+        <model><ID>162</ID><name>Natlas Mines shack</name></model>
         <model><ID>163</ID><name>Mutant egg (small)</name></model>
         <model><ID>164</ID><name>Ricochet</name></model>
         <model><ID>165</ID><name>Sparkles</name></model>
@@ -170,7 +170,7 @@
         <model><ID>181</ID><name>Mutant egg (big)</name></model>
         <model><ID>182</ID><name>Motorboat</name></model>
         <model><ID>183</ID><name>Earthquake</name></model>
-        <model><ID>189</ID><name>Lara's ponytail</name></model>
+        <model><ID>189</ID><name>Laras ponytail (unused)</name></model>
         <model><ID>190</ID><name>Font graphics</name></model>
         <model><ID>191</ID><name>Plant 1</name></model>
         <model><ID>192</ID><name>Plant 2</name></model>
@@ -195,7 +195,7 @@
     <game ID="2">
         <model><ID>0</ID><name>Lara</name></model>
         <model><ID>1</ID><name>Lara pistols animation</name></model>
-        <model><ID>2</ID><name>Lara's ponytail</name></model>
+        <model><ID>2</ID><name>Laras ponytail</name></model>
         <model><ID>3</ID><name>Lara shotgun animation</name></model>
         <model><ID>4</ID><name>Lara automags animation</name></model>
         <model><ID>5</ID><name>Lara uzis animation</name></model>
@@ -309,7 +309,7 @@
         <model><ID>119</ID><name>Bridge tilt 2</name></model>
         <model><ID>120</ID><name>Secret 1</name></model>
         <model><ID>121</ID><name>Secret 2</name></model>
-        <model><ID>122</ID><name>Lara's home photo</name></model>
+        <model><ID>122</ID><name>Laras home photo</name></model>
         <model><ID>123</ID><name>Cutscene actor 4</name></model>
         <model><ID>124</ID><name>Cutscene actor 5</name></model>
         <model><ID>125</ID><name>Cutscene actor 6</name></model>
@@ -400,7 +400,7 @@
         <model><ID>213</ID><name>Dripping water</name></model>
         <model><ID>214</ID><name>T-Rex</name></model>
         <model><ID>215</ID><name>Singing birds</name></model>
-        <model><ID>216</ID><name>Bartoli's Hideout clock</name></model>
+        <model><ID>216</ID><name>Bartolis Hideout clock</name></model>
         <model><ID>217</ID><name>Placeholder</name></model>
         <model><ID>218</ID><name>Dragon bones (front)</name></model>
         <model><ID>219</ID><name>Dragon bones (back)</name></model>
@@ -445,7 +445,7 @@
     <game ID="3">
         <model><ID>0</ID><name>Lara</name></model>
         <model><ID>1</ID><name>Lara pistol animation</name></model>
-        <model><ID>2</ID><name>Lara's ponytail</name></model>
+        <model><ID>2</ID><name>Laras ponytail</name></model>
         <model><ID>3</ID><name>Lara shotgun animation</name></model>
         <model><ID>4</ID><name>Lara Desert Eagle animation</name></model>
         <model><ID>5</ID><name>Lara Uzi animation</name></model>
@@ -568,7 +568,7 @@
         <model><ID>144</ID><name>Bridge tilt 2</name></model>
         <model><ID>145</ID><name>Passport (opening up)</name></model>
         <model><ID>146</ID><name>Stopwatch</name></model>
-        <model><ID>147</ID><name>Lara's Home photo</name></model>
+        <model><ID>147</ID><name>Laras Home photo</name></model>
         <model><ID>148</ID><name>Cutscene actor 1</name></model>
         <model><ID>149</ID><name>Cutscene actor 2</name></model>
         <model><ID>150</ID><name>Cutscene actor 3</name></model>

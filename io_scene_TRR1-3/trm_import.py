@@ -372,6 +372,7 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
 
         # PLACEHOLDER
         lara_paths = {
+            "OUTFIT_HAIR": "Laras ponytail",
             "OUTFIT_": 'Lara',
             "HOLSTER_": 'Lara',
             "HAND_": 'Lara',
