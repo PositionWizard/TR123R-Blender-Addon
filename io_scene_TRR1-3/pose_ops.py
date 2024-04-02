@@ -19,8 +19,7 @@ class TR123R_OT_PoseHandler:
 
     pose_id: bpy.props.IntProperty(
         name = "Pose Number",
-        description="Pose number in Photo Mode\n\n"
-                    '''Number will always represent Pose number in the game when "Load Disabled Poses" is enabled''',
+        description="Pose number in Photo Mode",
         default = 1,
         min = 1
     )
@@ -176,12 +175,16 @@ class TR123R_OT_LoadPose(bpy.types.Operator, TR123R_OT_PoseHandler):
         return l
     
     def load_pose(self, filepath:str):
-        rig = bpy.context.active_object
-        action = rig.animation_data.action
         add_keys = self.load_all or (self.auto_key and not self.load_all)
-        if not action and add_keys:
-            action = bpy.data.actions.new('PhotoMode_Poses')
-            rig.animation_data.action = action
+
+        rig = bpy.context.active_object
+        if add_keys:
+            anim = rig.animation_data
+            if not anim:
+                anim = rig.animation_data_create()
+            if not anim.action:
+                action = bpy.data.actions.new('PhotoMode_Poses')
+                rig.animation_data.action = action
 
         bpy.context.scene.frame_start = 1
         if self.load_all:
@@ -306,6 +309,7 @@ class TR123R_OT_SavePose(bpy.types.Operator, TR123R_OT_PoseHandler):
             f.write('BEGIN\n')
             pose_num = 1
             n = 0
+            replaced_poses = 0
             while n < len(pose_lines):
                 l = pose_lines[n]['data']
 
@@ -325,6 +329,7 @@ class TR123R_OT_SavePose(bpy.types.Operator, TR123R_OT_PoseHandler):
                             # write next pose and advance to next
                             else:
                                 f.write(poses[j]+'\n')
+                                replaced_poses+=1
                                 j+=1
                             # advance main pose list
                             n+=1
@@ -335,6 +340,7 @@ class TR123R_OT_SavePose(bpy.types.Operator, TR123R_OT_PoseHandler):
                     # otherwise replace a single pose
                     else:
                         f.write(poses[0]+'\n')
+                        replaced_poses+=1
                 # otherwise write the original line
                 else:
                     f.write(pose_lines[n]['data']+'\n')
@@ -356,6 +362,15 @@ class TR123R_OT_SavePose(bpy.types.Operator, TR123R_OT_PoseHandler):
                     f.write(poses[0]+'\n')
             f.write('END')
             f.truncate()
+
+            if self.add_new:
+                self.report({'INFO'}, f'Successfully Added {len(poses)} Poses')
+            else:
+                if replaced_poses == 1:
+                    self.report({'INFO'}, f'Successfully Replaced Pose "{self.pose_id}"')
+                elif replaced_poses > 1:
+                    frame_num = self.frame_end-self.frame_start
+                    self.report({'INFO'}, f"Successfully Replaced {replaced_poses} Poses ({self.pose_id} to {self.pose_id+frame_num})")
 
     def process_pose(self, rig:bpy.types.Object):
         p_bones = rig.pose.bones
@@ -444,6 +459,7 @@ class TR123R_OT_PoseSwitchState(bpy.types.Operator, TR123R_OT_PoseHandler):
             # filter out pose lines and tag them by 'enabled' sign
             poses = []
             num_poses = 0
+            poses_enabled = []
             for line in f_data:
                 l = line.strip().upper()
 
@@ -456,6 +472,10 @@ class TR123R_OT_PoseSwitchState(bpy.types.Operator, TR123R_OT_PoseHandler):
                     continue
 
                 num_poses += 1
+
+                if not (line.startswith('//') or line.startswith('\\')):
+                    poses_enabled.append(num_poses)
+
                 poses.append(line)
 
             if not self.switch_all and self.pose_id > num_poses:
@@ -464,26 +484,39 @@ class TR123R_OT_PoseSwitchState(bpy.types.Operator, TR123R_OT_PoseHandler):
                 
             f.write('BEGIN\n')
             num_switched_poses = 0
-            for i, line in enumerate(poses):
+            pose_game_id = 1
+            stop_count = False
+            for i, line in enumerate(poses, 1):
                 # handle disabled poses
+                is_disabled = line.startswith('//') or line.startswith('\\')
                 if self.switch_all or (not self.switch_all and i == self.pose_id):
-                    is_disabled = line.startswith('//') or line.startswith('\\')
                     if self.enable and is_disabled:
                         line = line[2:]
                         num_switched_poses+=1
+                        stop_count = True
                     elif not self.enable and not is_disabled:
                         line = '//'+line
                         num_switched_poses+=1
+                        stop_count = True
                     
+                if not (stop_count or is_disabled):
+                    pose_game_id += 1
+
                 f.write(line)
             f.write('END')
             f.truncate()
 
             msg_state = "Enabled" if self.enable else "Disabled"
             if num_switched_poses > 0:
-                self.report({'INFO'}, f"Successfully {msg_state} {num_switched_poses} Poses")
+                smaller_existing = next(iter([i for i, p in enumerate(poses_enabled) if p > self.pose_id]), None)
+                if self.switch_all:
+                    self.report({'INFO'}, f"Successfully {msg_state} {num_switched_poses} Poses")
+                elif smaller_existing and self.enable:
+                    self.report({'INFO'}, f'Successfully {msg_state} Pose between Numbers "{smaller_existing}" and "{smaller_existing+1}"')
+                else:
+                    self.report({'INFO'}, f'Successfully {msg_state} Pose at Number "{pose_game_id}", Line "{self.pose_id}"')
             else:
-                self.report({'WARNING'}, f"No Poses {msg_state}")
+                self.report({'WARNING'}, f"No Poses were {msg_state}")
         
         return {'FINISHED'}
     
@@ -491,7 +524,7 @@ class TR123R_OT_PoseSwitchState(bpy.types.Operator, TR123R_OT_PoseHandler):
         row = col.row()
         row.prop(self, 'switch_all')
         row = col.row()
-        row.prop(self, 'pose_id')
+        row.prop(self, 'pose_id', text="Pose Line")
         row.enabled = not self.switch_all
 
 cls = (
