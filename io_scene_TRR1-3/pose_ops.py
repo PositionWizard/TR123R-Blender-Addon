@@ -1,6 +1,6 @@
 import bpy, os
 from mathutils import Vector, Euler, Matrix
-from math import radians
+from math import radians, degrees
 from .utils import TRM_SCALE
 
 POSE_ANGLE_SCALE = 1024
@@ -122,7 +122,7 @@ class TR123R_OT_LoadPose(bpy.types.Operator, TR123R_OT_PoseHandler):
                 a = angles[f][4:-1].split(',')
                 rot = []
                 for axis in reversed(a):
-                    v = POSE_ANGLE_SCALE - (int(axis.strip()) % POSE_ANGLE_SCALE)
+                    v = -int(axis.strip()) % POSE_ANGLE_SCALE
                     v = (v / POSE_ANGLE_SCALE) * 360
                     rot.append(v)
                 x,y,z = rot
@@ -135,6 +135,7 @@ class TR123R_OT_LoadPose(bpy.types.Operator, TR123R_OT_PoseHandler):
             # but it turns out 'YXZ' is the correct rotation order.
             # Y and Z values still need to be swapped according to the game's coordinate system.
             trm_rot_e = Euler((radians(x), radians(z), radians(y)), rot_order)
+            print(f'Original XZY Euler: {trm_rot_e}')
             
             arm_b = p_bones[f].bone
             # Create a posebone matrix rotated in armature-space
@@ -142,11 +143,21 @@ class TR123R_OT_LoadPose(bpy.types.Operator, TR123R_OT_PoseHandler):
             # which means to get correct results, bones would either need to have their orientation
             # be the same as armature object iteslf or matrix transformation in armature's object space needs to be made on values
             mat =  arm_b.matrix_local.inverted() @ trm_rot_e.to_matrix().to_4x4() @ arm_b.matrix_local
-            pb_rot_q = mat.decompose()[1]
-            pb_rot_e = pb_rot_q.to_euler(rot_order)
+            pb_rot_e = mat.to_euler(rot_order)
+            print(f'Converted XZY Euler: {pb_rot_e}')
             
             p_bones[f].rotation_mode = rot_order
             p_bones[f].rotation_euler = pb_rot_e
+
+            # # convert back tests
+            # pb_rot_e1 = p_bones[f].matrix.to_euler(rot_order)
+            # print(f'Blender Decomposed XZY Euler: {pb_rot_e1} (Should be same as Converted)')
+            
+            # # mat = arm_b.matrix_local @ pb_rot_e.to_matrix().to_4x4() @ arm_b.matrix_local.inverted()
+            # mat = arm_b.matrix_local @ p_bones[f].matrix_basis @ arm_b.matrix_local.inverted()
+            # pb_rot_e2 = mat.to_euler(rot_order)
+            # print(f'Converted Back XZY Euler: {pb_rot_e2} (Should be same as Original)')
+            # p_bones[f].rotation_euler = pb_rot_e2
             
             p_bones[f].keyframe_insert(data_path="rotation_euler", frame=frame, group=p_bones[f].name)
     
@@ -293,7 +304,6 @@ class TR123R_OT_SavePose(bpy.types.Operator, TR123R_OT_PoseHandler):
             n = 0
             while n < len(pose_lines):
                 l = pose_lines[n]['data']
-                print(f'Line: {n}')
 
                 # replace pose on the correct ID
                 if pose_lines[n]['enabled'] and (pose_num == self.pose_id) and not self.add_new:
@@ -343,9 +353,48 @@ class TR123R_OT_SavePose(bpy.types.Operator, TR123R_OT_PoseHandler):
             f.write('END')
             f.truncate()
 
+    def process_pose(self, rig:bpy.types.Object):
+        p_bones = rig.pose.bones
+        root_loc = [str(round(v*-TRM_SCALE)) for v in p_bones[0].matrix.translation]
+        root_loc = [root_loc[0], root_loc[2], root_loc[1]]
+        
+        bone_rots = []
+        for pb in p_bones:
+            if pb.bone.use_deform:
+                mat = pb.bone.matrix_local @ pb.matrix_basis @ pb.bone.matrix_local.inverted()
+                pb_rot_e = mat.to_euler('YXZ')
+                rot = [degrees(r) % 360 for r in pb_rot_e]
+                for i in range(len(rot)):
+                    val = rot[i]
+                    val = round((val / 360) * POSE_ANGLE_SCALE)
+                    rot[i] = -val % POSE_ANGLE_SCALE
+
+                # axes get saved in ZYX order with Z and Y swapped
+                bone_rots.append('ZYX(%d,%d,%d)' % (rot[1], rot[2], rot[0]))
+
+                # TESTING
+                # if bpy.context.active_pose_bone == pb:
+                #     print('ZYX(%d, %d, %d)' % (rot[1], rot[2], rot[0]))
+                # if bpy.context.active_pose_bone == pb:
+                #     mat = pb.matrix_basis
+                #     rot_order = 'YXZ'
+                #     pb_rot_e = mat.to_euler(rot_order) # YXZ
+                #     pb.rotation_euler = pb_rot_e
+                #     x,y,z = [degrees(r) % 360 for r in pb_rot_e]
+                #     print(f'Converted XZY Euler: {x,y,z}')
+                #     pb.rotation_mode = rot_order
+                #     pb.rotation_euler = (Euler((radians(x),radians(y),radians(z)), rot_order))
+
+        # return '0, 0, 0, POSE'
+        return ', '.join(root_loc + bone_rots)
+
     def save_pose(self, filepath):
+        rig = bpy.context.active_object
+        poses = []
+        poses.append(self.process_pose(rig))
+
         test_poses = [f'0, 0, 0, POSE_{n}' for n in range(1,5)]
-        self.write_pose(filepath, test_poses)
+        self.write_pose(filepath, poses)
             
         return {'FINISHED'}
     
