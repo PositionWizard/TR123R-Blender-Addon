@@ -245,6 +245,15 @@ class TR123R_PT_PoseTools(bpy.types.Panel):
         op = row.operator(pose_ops.TR123R_OT_SavePose.bl_idname, text="Save Multiple Poses")
         op.save_many = True
 
+        col = box.column(align=True)
+        col.label(text=pose_ops.TR123R_OT_PoseSwitchState.bl_label)
+        row = col.row()
+        op = row.operator(pose_ops.TR123R_OT_PoseSwitchState.bl_idname, text="Enable Poses")
+        op.enable = True
+        row = col.row()
+        op = row.operator(pose_ops.TR123R_OT_PoseSwitchState.bl_idname, text="Disable Poses")
+        op.enable = False
+
         addon_updater_ops.update_notice_box_ui(self, context)
 
 cls =(

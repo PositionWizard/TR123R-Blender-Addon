@@ -214,8 +214,6 @@ class TR123R_OT_LoadPose(bpy.types.Operator, TR123R_OT_PoseHandler):
     def draw_extra(self, context, col):
         row = col.row()
         row.prop(self, 'ignore_disabled')
-        if context.mode != 'POSE':
-            row.enabled = False
         if not self.load_all:
             row = col.row()
             row.prop(self, 'pose_id')
@@ -223,6 +221,8 @@ class TR123R_OT_LoadPose(bpy.types.Operator, TR123R_OT_PoseHandler):
             row.prop(self, 'auto_key')
         row = col.row()
         row.prop(self, 'only_selected')
+        if context.mode != 'POSE':
+            row.enabled = False
 
     exec_pose = load_pose
 
@@ -420,9 +420,84 @@ class TR123R_OT_SavePose(bpy.types.Operator, TR123R_OT_PoseHandler):
         row.prop(self, 'pose_id', text=pose_id_text)
         row.enabled = not self.add_new
 
+class TR123R_OT_PoseSwitchState(bpy.types.Operator, TR123R_OT_PoseHandler):
+    bl_idname = "io_tombraider123r.pose_switch_state"
+    bl_label = "Photo Mode Poses State"
+    bl_description = "Enable or Disable a Photo Mode Pose"
+
+    enable: bpy.props.BoolProperty(
+        name = "",
+        default=True
+    )
+
+    switch_all: bpy.props.BoolProperty(
+        name = "Switch All Poses",
+        description  = "Enables or Disables all Poses in the file",
+        default=True
+    )
+
+    def exec_pose(self, filepath):
+        with open(filepath, 'r+') as f:
+            f_data = f.readlines()
+            f.seek(0)
+
+            # filter out pose lines and tag them by 'enabled' sign
+            poses = []
+            num_poses = 0
+            for line in f_data:
+                l = line.strip().upper()
+
+                l = l.split(',', 3)
+                for str_i, substr in enumerate(l):
+                    l[str_i] = substr.strip()
+
+                # Skip BEGIN and END tags
+                if len(l) < 3:
+                    continue
+
+                num_poses += 1
+                poses.append(line)
+
+            if not self.switch_all and self.pose_id > num_poses:
+                self.report({'ERROR'}, f'Pose Number: "{self.pose_id}" does not exist. Number of available Poses: "{num_poses}"')
+                return {'CANCELLED'}
+                
+            f.write('BEGIN\n')
+            num_switched_poses = 0
+            for i, line in enumerate(poses):
+                # handle disabled poses
+                if self.switch_all or (not self.switch_all and i == self.pose_id):
+                    is_disabled = line.startswith('//') or line.startswith('\\')
+                    if self.enable and is_disabled:
+                        line = line[2:]
+                        num_switched_poses+=1
+                    elif not self.enable and not is_disabled:
+                        line = '//'+line
+                        num_switched_poses+=1
+                    
+                f.write(line)
+            f.write('END')
+            f.truncate()
+
+            msg_state = "Enabled" if self.enable else "Disabled"
+            if num_switched_poses > 0:
+                self.report({'INFO'}, f"Successfully {msg_state} {num_switched_poses} Poses")
+            else:
+                self.report({'WARNING'}, f"No Poses {msg_state}")
+        
+        return {'FINISHED'}
+    
+    def draw_extra(self, context: bpy.types.Context, col:bpy.types.UILayout):
+        row = col.row()
+        row.prop(self, 'switch_all')
+        row = col.row()
+        row.prop(self, 'pose_id')
+        row.enabled = not self.switch_all
+
 cls = (
     TR123R_OT_LoadPose,
     TR123R_OT_SavePose,
+    TR123R_OT_PoseSwitchState,
 )
 
 _register, _unregister = bpy.utils.register_classes_factory(cls)
