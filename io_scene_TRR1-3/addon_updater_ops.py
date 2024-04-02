@@ -1367,7 +1367,7 @@ def register(bl_info):
     # Addon subfolder path.
     # "sample/path/to/addon"
     # default is "" or None, meaning root
-    updater.subfolder_path = ""
+    updater.subfolder_path = "io_scene_TRR1-3/"
 
     # Used to check/compare versions.
     updater.current_version = bl_info["version"]
@@ -1405,7 +1405,7 @@ def register(bl_info):
     # update. If a pattern file is not found in new update, no action is taken
     # NOTE: This does NOT delete anything proactively, rather only defines what
     # is allowed to be overwritten during an update execution.
-    updater.overwrite_patterns = ["*.png", "*.jpg", "README.md", "LICENSE.txt"]
+    updater.overwrite_patterns = ["*.png", "*.jpg", "README.md", "LICENSE.txt", "*.xml"]
     # updater.overwrite_patterns = []
     # other examples:
     # ["*"] means ALL files/folders will be overwritten by update, was the
@@ -1460,7 +1460,7 @@ def register(bl_info):
     # Note: updater.include_branch_list defaults to ['master'] branch if set to
     # none. Example targeting another multiple branches allowed to pull from:
     # updater.include_branch_list = ['master', 'dev']
-    updater.include_branch_list = None  # None is the equivalent = ['master']
+    updater.include_branch_list = ['main']  # None is the equivalent = ['master']
 
     # Only allow manual install, thus prompting the user to open
     # the addon's web page to download, specifically: updater.website
