@@ -143,12 +143,6 @@ class TR123R_OT_GenerateSkeletonData(bpy.types.Operator):
     op_result = None
     op_result_msg = []
 
-    @classmethod
-    def poll(cls, context):
-        prefs = context.preferences.addons[__package__].preferences
-        if 'game_path' in prefs:
-            return os.path.exists(prefs.game_path)
-
     def execute(self, context):
         # Skip another execution on popup's 'OK' button
         if self.op_result != None:
@@ -156,6 +150,11 @@ class TR123R_OT_GenerateSkeletonData(bpy.types.Operator):
         
         prefs = context.preferences.addons[__package__].preferences
         game_path = prefs.game_path
+
+        if not os.path.exists(prefs.game_path):
+            self.op_result = {'CANCELLED'}
+            self.op_result_msg = ["ERROR: Game Directory path not set!", "Provide a valid path to main game directory", "in addon's preferences Game Directory field."]
+            return self.op_result
 
         # Loop through game folders in game directory and check for any existence of .PDP files
         path_valid = False
@@ -167,7 +166,7 @@ class TR123R_OT_GenerateSkeletonData(bpy.types.Operator):
 
         if not path_valid:
             self.op_result = {'CANCELLED'}
-            self.op_result_msg = ["Wrong Game Directory!", "Couldn't find .PDP files in DATA folders."]
+            self.op_result_msg = ["ERROR: Wrong Game Directory!", "Couldn't find .PDP files in DATA folders."]
             return self.op_result
         
         pdp_utils.xml_write_skeleton(game_path)
@@ -175,7 +174,6 @@ class TR123R_OT_GenerateSkeletonData(bpy.types.Operator):
         self.op_result = {"FINISHED"}
         self.op_result_msg = ["Success!", "Skeleton Data generated successfully.", "TRMs can create armatures now.", "NOTE: WIP - for now only Lara meshes are supported!"]
         return self.op_result
-
     
     def invoke(self, context, event):
         # Execute script, dialog box acts only as a message box for results
@@ -188,8 +186,10 @@ class TR123R_OT_GenerateSkeletonData(bpy.types.Operator):
         flow = layout.grid_flow()
         col = flow.column_flow()
         
-        res_icon = "CANCEL" if 'CANCELLED' in self.op_result else "INFO"
+        is_err = 'CANCELLED' in self.op_result
+        res_icon = "CANCEL" if is_err else "INFO"
         row = col.row()
+        row.alert = is_err
         row.label(text=self.op_result_msg[0], icon=res_icon)
         for line in self.op_result_msg[1:]:
             row = col.row()
