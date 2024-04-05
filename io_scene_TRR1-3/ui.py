@@ -65,10 +65,13 @@ class TR123R_PG_ShaderSettings(bpy.types.PropertyGroup):
     type: bpy.props.EnumProperty(
         name=trm_utils.SHADER_DATA_NAMES[0],
         items=(
-            ('0', 'Standard', "Standard diffuse shader without additional effects"),
+            ('0', 'Standard', "Standard diffuse shader with transparency ond SubType:\n\n"
+                                "SubType 'B': blended transparency effect"),
             ('2', 'Unknown2', "???"),
             ('3', 'Glossy', "???"),
-            ('6', 'Unknown16', "???"),
+            ('6', 'Alpha', "Diffuse shader with transparency effects depending on a material SubType:\n\n"
+                            "SubType 'A' (Default): cut-off transparency effect, known also as alpha-test.\n"
+                            "SubType 'B': mix of opaque effect for binary alpha values (0, 255) and blended transparency effect for non-binary alpha values ([1-254] range)"),
             ('12', 'Unknown12', "???"),
             ('14', 'Unknown14', "???"),
             ('18', 'Unknown18', "???"),

@@ -362,13 +362,11 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
                     nodes_to_align.insert(0, tex_node)
                     trm_utils.connect_nodes(mat.node_tree, shader_inst_node, 'Base Color', tex_node, 0)
 
-            if type_name == trm_utils.SHADER_SUBTYPES[2]:
+            if type_name in trm_utils.SHADER_SUBTYPES[1:]:
+                print(mat.name)
                 mat.blend_method = "BLEND"
                 if self.use_tex and tex_node:
                     trm_utils.connect_nodes(mat.node_tree, shader_inst_node, 'Alpha', tex_node, 1)
-                            
-            if type_name == trm_utils.SHADER_SUBTYPES[1]:
-                shader_inst_node.inputs[2].default_value = True
 
             trm_utils.space_out_nodes(nodes_to_align)
 
