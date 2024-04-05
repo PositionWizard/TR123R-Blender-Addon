@@ -94,12 +94,12 @@ class TR123R_OT_ExportTRM(Operator, ExportHelper):
         bm.free()
 
     def get_trm(self, act_obj: bpy.types.Object, sel_obj: list[bpy.types.Object]):
-        err_call = {'ERROR'}, "Select a 3D Object!"
+        err_call = {'ERROR'}, "No Mesh selected! Export cancelled"
         result = {'CANCELLED'}, None, None
         if not self.act_only:
             objs = [self.copy_object(o) for o in sel_obj if o.type == 'MESH']
             if not objs:
-                self.report(err_call)
+                self.report(*err_call)
                 return result
 
             for obj_c in objs:
@@ -110,14 +110,15 @@ class TR123R_OT_ExportTRM(Operator, ExportHelper):
                 bpy.ops.object.join()
         else:
             if not act_obj or act_obj.type != 'MESH':
-                self.report(err_call)
+                self.report(*err_call)
                 return result
             obj = self.copy_object(act_obj)
             self.prepare_mesh(obj)
             objs = [obj]
             
         trm = bpy.context.active_object
-        trm.data.calc_normals_split()
+        if bpy.app.version < (4,1):
+            trm.data.calc_normals_split()
         if trm.vertex_groups:
             bpy.ops.object.vertex_group_normalize_all(group_select_mode='ALL', lock_active=False)
 
