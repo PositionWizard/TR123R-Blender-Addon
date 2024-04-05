@@ -119,20 +119,21 @@ class TR123R_OT_UV_QuantizeVerts(bpy.types.Operator):
         return obj and obj.type == 'MESH' and context.mode == 'EDIT_MESH'
 
     def execute(self, context):
-        obj = context.active_object
-        mesh: bpy.types.Mesh = obj.data
+        for obj in bpy.context.selected_objects:
+            if obj.type == 'MESH':
+                mesh: bpy.types.Mesh = obj.data
 
-        bm = bmesh.from_edit_mesh(mesh)
-        uv_layer = bm.loops.layers.uv.verify()
+                bm = bmesh.from_edit_mesh(mesh)
+                uv_layer = bm.loops.layers.uv.verify()
 
-        for f in bm.faces:
-            for l in f.loops:
-                uv = l[uv_layer]
-                uv_co = l[uv_layer].uv
-                if not self.only_selected or self.only_selected and uv.select:
-                    uv.uv = (self.float_to_float8(uv_co[0]), self.float_to_float8(uv_co[1]))
-        
-        bmesh.update_edit_mesh(mesh, destructive=False, loop_triangles=False)
+                for f in bm.faces:
+                    for l in f.loops:
+                        uv = l[uv_layer]
+                        uv_co = l[uv_layer].uv
+                        if not self.only_selected or self.only_selected and uv.select:
+                            uv.uv = (self.float_to_float8(uv_co[0]), self.float_to_float8(uv_co[1]))
+                
+                bmesh.update_edit_mesh(mesh, destructive=False, loop_triangles=False)
         return {"FINISHED"}
 
 class TR123R_OT_GenerateSkeletonData(bpy.types.Operator):
