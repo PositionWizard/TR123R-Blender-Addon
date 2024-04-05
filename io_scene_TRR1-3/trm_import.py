@@ -147,6 +147,14 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
         default=True
     )
 
+    import_armature: BoolProperty(
+        name="Import Armature",
+        description="Creates Armatures for imported models.\n\n"
+                    "Requires Skeleton Data to be Generated at least once. Happens automatically during a first import.\n"
+                    "Valid Game Directory path needs to be provided in addon's preferences in order to generate the data",
+        default=True
+    )
+
     connect_bones: BoolProperty(
         name="Force Connect Bones",
         description="Try to connect parent bones to the children bones on imported Armatures.\n\n"
@@ -354,13 +362,11 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
                     nodes_to_align.insert(0, tex_node)
                     trm_utils.connect_nodes(mat.node_tree, shader_inst_node, 'Base Color', tex_node, 0)
 
-            if type_name == trm_utils.SHADER_SUBTYPES[2]:
+            if type_name in trm_utils.SHADER_SUBTYPES[1:]:
+                print(mat.name)
                 mat.blend_method = "BLEND"
                 if self.use_tex and tex_node:
                     trm_utils.connect_nodes(mat.node_tree, shader_inst_node, 'Alpha', tex_node, 1)
-                            
-            if type_name == trm_utils.SHADER_SUBTYPES[1]:
-                shader_inst_node.inputs[2].default_value = True
 
             trm_utils.space_out_nodes(nodes_to_align)
 
@@ -670,7 +676,10 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
                 uvs.data[i].uv = (vertices[v][10] / 255, (255 - vertices[v][14]) / 255)
         
         # CREATE ARMATURE
-        rig, bone_names = self.create_armature(filename, skeldata_path, trm)
+        if skeldata_path:
+            rig, bone_names = self.create_armature(filename, skeldata_path, trm)
+        else:
+            rig, bone_names = None, None
 
         # CREATE & ASSIGN VERTEX GROUPS
         CreateVertexGroups(trm, max_joint + 1, rig, bone_names, self.mesh_type, filename)
@@ -733,7 +742,8 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
                 for mat in trm_mesh.materials:
                     bpy.data.materials.remove(mat)
                 bpy.data.meshes.remove(trm_mesh)
-                bpy.data.armatures.remove(rig.data)
+                if rig:
+                    bpy.data.armatures.remove(rig.data)
                 return {'CANCELLED'}
             trm_mesh.update()
 
@@ -757,18 +767,23 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
             self.report({'WARNING'}, f'Wrong DDS Converter path or file type: "{texconv_path}", skipping texture conversion...')
             self.skip_texconv = True
 
-        addon_dir = os.path.dirname(__file__)
-        skeldata_path = os.path.join(addon_dir, SKELETON_DATA_FILEPATH)
-        is_skeldata = os.path.exists(skeldata_path)
+        if self.import_armature:
+            addon_dir = os.path.dirname(__file__)
+            skeldata_path = os.path.join(addon_dir, SKELETON_DATA_FILEPATH)
+            # Generate missing SkeletonData.xml on a first import that can create an armature
+            # TODO: Support more/all TRMs - this will require pairing TRM names with model IDs
+            if not os.path.exists(skeldata_path):
+                print("Generating Skeleton Data...")
+                result = bpy.ops.io_tombraider123r.generate_skeleton_data()
+                if result == {'CANCELLED'}:
+                    self.report({'ERROR'}, "Could not generate Skeleton Data!\nCheck if Game Directory path in addon's preferences is provided. Armature not imported.")
+                    skeldata_path = None
+        else:
+            skeldata_path = None
 
         for f in self.files:
             filepath = Path.join(self.directory, f.name)
-            # Generate missing SkeletonData.xml on a first import that can create an armature
-            # TODO: Support more/all TRMs - this will require pairing TRM names with model IDs
-            if not is_skeldata:
-                print("Generating Skeleton Data...")
-                bpy.ops.io_tombraider123r.generate_skeleton_data()
-
+        
             obj_name = str(f.name).removesuffix(self.filename_ext)
             result = self.read_trm_data(context, filepath, addon_prefs, obj_name, skeldata_path)
 
@@ -799,9 +814,11 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
         layout.prop(self, 'scale')
         layout.prop(self, 'mesh_type')
         layout.prop(self, 'merge_uv')
-        layout.prop(self, 'connect_bones')
-        if self.connect_bones:
-            layout.prop(self, 'auto_orient_bones')
+        layout.prop(self, 'import_armature')
+        if self.import_armature:
+            layout.prop(self, 'connect_bones')
+            if self.connect_bones:
+                layout.prop(self, 'auto_orient_bones')
         layout.prop(self, 'use_tex')
 
         if self.use_tex:
