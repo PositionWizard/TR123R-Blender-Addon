@@ -371,88 +371,89 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
             trm_utils.space_out_nodes(nodes_to_align)
 
     def create_armature(self, filename, skeldata_path, trm):
-        def setup_armature(rig):
+        def setup_armature(rig, existing=False):
             trm.parent = rig
-            mod = trm.modifiers.new('TRM Armature', 'ARMATURE')
+            mod = None
+            mod_name = 'TRM Armature'
+            if existing:
+                mod = next(iter([m for m in trm.modifiers if m.type == 'ARMATURE' and m.name == mod_name]), None)
+            if not mod:
+                mod = trm.modifiers.new(mod_name, 'ARMATURE')
             mod.object = rig
 
-        # PLACEHOLDER
-        lara_paths = {
-            "OUTFIT_HAIR": "Laras ponytail",
-            "OUTFIT_": 'Lara',
-            "HOLSTER_": 'Lara',
-            "HAND_": 'Lara',
-        }
+        lara_paths = {"OUTFIT_HANDS_", "OUTFIT_TR", "HOLSTER_", "HAND_"}
+        #TODO: Replace entity names with TRM names in the xml
+        # get TRM substirng and name, and map as Lara's model if name matches path in the set
+        trm_substr, trm_name = next(iter([(subname, 'LARA') for subname in lara_paths if subname in filename]), (filename, filename))
+        print(f"Substring: {trm_substr}")
+        print(f"Name: {trm_name}")
+        
+        skeldata = ET.parse(skeldata_path)
+        skeldata_root = skeldata.getroot()
+
+        #TODO: Handle files based on a game number
+        # try to find TRM by its filename and cancel if not found
+        skeldata_arm = skeldata_root.find(f"./Game/Armature/[@name='{trm_name}']")
+        if not skeldata_arm:
+            self.report({'WARNING'}, f'Could not find Skeleton Data for "{trm_name}". Skipping Armature creation...')
+            return None, None
+        
+        # Look for a first armature with a name having the same substring as one found in TRM name
+        rig_name = f'Rig_{trm_name}'
+        ob_name = next(iter([ob.name for ob in bpy.context.collection.objects if rig_name == ob.name and ob.type == 'ARMATURE']), "")
+        if ob_name:
+            rig = bpy.context.collection.objects.get(ob_name)
+            setup_armature(rig, True)
+            return rig, None
+            
+        saved_active = bpy.context.active_object
+        armature = bpy.data.armatures.new(rig_name)
+        rig = bpy.data.objects.new(rig_name, armature)
+        bpy.context.collection.objects.link(rig)
+        setup_armature(rig)
+
+        bpy.context.view_layer.objects.active = rig
+        saved_mode = bpy.context.mode
+        bpy.ops.object.mode_set(mode='EDIT')
+        e_bones = armature.edit_bones
 
         default_bone_length = 64
-
         bone_names = []
-        #TODO: Handle other TRMs by replacing entity names with TRM names in the xml
-        # get substring of a TRM name matching dict's keys
-        trm_substr = next(iter([subname for subname in lara_paths.keys() if subname in filename]), "")
-        if trm_substr:
-            # Look for a first armature with a name having the same substring as one found in TRM name
-            ob_name = next(iter([ob.name for ob in bpy.context.collection.objects if trm_substr in ob.name and ob.type == 'ARMATURE']), "")
-            if ob_name:
-                rig = bpy.context.collection.objects.get(ob_name)
-                setup_armature(rig)
-                return rig, bone_names
-                
-            saved_active = bpy.context.active_object
-            rig_name = f'Rig_{filename}'
-            armature = bpy.data.armatures.new(rig_name)
-            rig = bpy.data.objects.new(rig_name, armature)
-            bpy.context.collection.objects.link(rig)
-            setup_armature(rig)
+        skeldata_bones = skeldata_arm.findall("./Bone")
+        for skeldata_bone in skeldata_bones:
+            p_ID = int(skeldata_bone.attrib['p_ID'])
+            skeldata_bone_head = skeldata_bone.find("./Data/[@type='HEAD']")
+            skeldata_bone_tail = skeldata_bone.find("./Data/[@type='TAIL']")
 
-            bpy.context.view_layer.objects.active = rig
-            saved_mode = bpy.context.mode
-            bpy.ops.object.mode_set(mode='EDIT')
+            bone = e_bones.new(f'Bone')
+            b_data_head = Vector(eval(skeldata_bone_head.attrib['Vector']))
+            b_head = Vector((b_data_head.x, b_data_head.z, b_data_head.y)) * -self.scale
+            if self.connect_bones and skeldata_bone_tail is not None:
+                b_data_tail = Vector(eval(skeldata_bone_tail.attrib['Vector']))
+                b_tail = Vector((b_data_tail.x, b_data_tail.z, b_data_tail.y)) * -self.scale
+            else:
+                b_tail = Vector((0, default_bone_length, 0)) * self.scale
 
-            e_bones = armature.edit_bones
+            b_tail += b_head
 
-            skeldata = ET.parse(skeldata_path)
-            skeldata_root = skeldata.getroot()
+            if p_ID > -1:
+                bone.parent = e_bones[p_ID]
+                if self.auto_orient_bones and self.connect_bones and skeldata_bone_tail is None:
+                    parent_bone_direction = Vector(bone.parent.tail - bone.parent.head).normalized()
+                    b_tail = parent_bone_direction * default_bone_length * self.scale
+                    b_tail += b_head
 
-            #TODO: Handle files based on a game number
-            skeldata_arm = skeldata_root.find("./Game/Armature/[@name='%s']" % lara_paths[trm_substr])
-            skeldata_bones = skeldata_arm.findall("./Bone")
-            for skeldata_bone in skeldata_bones:
-                p_ID = int(skeldata_bone.attrib['p_ID'])
-                skeldata_bone_head = skeldata_bone.find("./Data/[@type='HEAD']")
-                skeldata_bone_tail = skeldata_bone.find("./Data/[@type='TAIL']")
+                bone.head = b_head
+                bone.tail = b_tail
+                bone.translate(bone.parent.head)
+            else:
+                bone.head = b_head
+                bone.tail = b_tail
 
-                bone = e_bones.new(f'Bone')
-                b_data_head = Vector(eval(skeldata_bone_head.attrib['Vector']))
-                b_head = Vector((b_data_head.x, b_data_head.z, b_data_head.y)) * -self.scale
-                if self.connect_bones and skeldata_bone_tail is not None:
-                    b_data_tail = Vector(eval(skeldata_bone_tail.attrib['Vector']))
-                    b_tail = Vector((b_data_tail.x, b_data_tail.z, b_data_tail.y)) * -self.scale
-                else:
-                    b_tail = Vector((0, default_bone_length, 0)) * self.scale
+            bone_names.append(bone.name)
 
-                b_tail += b_head
-
-                if p_ID > -1:
-                    bone.parent = e_bones[p_ID]
-                    if self.auto_orient_bones and self.connect_bones and skeldata_bone_tail is None:
-                        parent_bone_direction = Vector(bone.parent.tail - bone.parent.head).normalized()
-                        b_tail = parent_bone_direction * default_bone_length * self.scale
-                        b_tail += b_head
-
-                    bone.head = b_head
-                    bone.tail = b_tail
-                    bone.translate(bone.parent.head)
-                else:
-                    bone.head = b_head
-                    bone.tail = b_tail
-
-                bone_names.append(bone.name)
-
-            bpy.ops.object.mode_set(mode=saved_mode)
-            bpy.context.view_layer.objects.active = saved_active            
-        else:
-            rig = None
+        bpy.ops.object.mode_set(mode=saved_mode)
+        bpy.context.view_layer.objects.active = saved_active
 
         return rig, bone_names
     
