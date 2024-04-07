@@ -129,7 +129,7 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
 
     tex_dir: EnumProperty(
         name="Game",
-        description="Specify the game to look for the textures in.\n"
+        description="Specify the game to look for the textures and armatures in.\n"
                     "This is only if game directory path is specified for ambiguous model paths",
         items=(
             ('1', "I", ""),
@@ -183,6 +183,9 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
         tex_conv_path = addon_prefs.dds_tool_filepath
         png_export_path = addon_prefs.tex_conv_directory
         tex_node = None
+        if not folders:
+            return tex_node
+        
         for folder, game_id in folders:
             png_filename = f"{tex_name}.png"
             if not png_export_path:
@@ -251,10 +254,10 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
 
         return texture_node, tex
 
-    def create_material(self, tex_name="", folders=""):
+    def create_material(self, tex_name="", folders="", import_tex=False):
         # Check what game the texture is from to tag a material with it
         mat_suffix = ""
-        if self.use_tex:
+        if import_tex:
             for folder, game_id in folders:
                 path_dds = Path.join(folder, f"{tex_name}.dds")
                 if Path.exists(path_dds):
@@ -363,14 +366,13 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
                     trm_utils.connect_nodes(mat.node_tree, shader_inst_node, 'Base Color', tex_node, 0)
 
             if type_name in trm_utils.SHADER_SUBTYPES[1:]:
-                print(mat.name)
                 mat.blend_method = "BLEND"
                 if self.use_tex and tex_node:
                     trm_utils.connect_nodes(mat.node_tree, shader_inst_node, 'Alpha', tex_node, 1)
 
             trm_utils.space_out_nodes(nodes_to_align)
 
-    def create_armature(self, filename, skeldata_path, trm):
+    def create_armature(self, filename:str, skeldata_path:str, game_id:str, trm:bpy.types.Object):
         def setup_armature(rig, existing=False):
             trm.parent = rig
             mod = None
@@ -384,18 +386,20 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
         lara_paths = {"OUTFIT_HANDS_", "OUTFIT_TR", "HOLSTER_", "HAND_"}
         #TODO: Replace entity names with TRM names in the xml
         # get TRM substirng and name, and map as Lara's model if name matches path in the set
-        trm_substr, trm_name = next(iter([(subname, 'LARA') for subname in lara_paths if subname in filename]), (filename, filename))
-        print(f"Substring: {trm_substr}")
-        print(f"Name: {trm_name}")
+        trm_name = next(iter(['LARA' for subname in lara_paths if subname in filename]), filename)
+
+        if trm_name == 'OUTFIT_HAIR':
+            game_id = 2
+        elif not game_id.isdigit():
+            return None, None
         
         skeldata = ET.parse(skeldata_path)
         skeldata_root = skeldata.getroot()
 
-        #TODO: Handle files based on a game number
         # try to find TRM by its filename and cancel if not found
-        skeldata_arm = skeldata_root.find(f"./Game/Armature/[@name='{trm_name}']")
+        skeldata_arm = skeldata_root.find(f"./Game/[@ID='{game_id}']/Armature/[@name='{trm_name}']")
         if not skeldata_arm:
-            self.report({'WARNING'}, f'Could not find Skeleton Data for "{trm_name}". Skipping Armature creation...')
+            self.report({'WARNING'}, f'Could not find Skeleton Data for "{trm_name}" in Game {game_id}. Skipping Armature creation...')
             return None, None
         
         # Look for a first armature with a name having the same substring as one found in TRM name
@@ -604,9 +608,10 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
 
         trm_mesh.from_pydata(trm_vertices, trm_edges, trm_faces, shade_flat=False)
         trm_mesh.update()
-        
+
         # Get folders in game's or relative TRM path
-        if self.use_tex:
+        folders = None
+        if self.use_tex or self.import_armature:
             if self.tex_dir == 'REL':
                 # File folder, these modifications assume we're dealing with files from the Remasters.
                 folder = Path.dirname(filepath)
@@ -618,20 +623,25 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
                 game_id = self.tex_dir
                 game_dir = addon_prefs.game_path
             
-            # List lookup folders, start from the game number, but check also from previous games
+            # List lookup folders, start from the game number, but check also from previous games          
             try:
-                folders = [(Path.abspath(f"{game_dir}/{i}/TEX/"), i) for i in range(int(game_id), 0, -1)]
+                folders = [(Path.abspath(f"{game_dir}/{i}/"), i) for i in range(int(game_id), 0, -1)]
+                if self.use_tex:
+                    folders = [(Path.abspath(f"{p}/TEX/"), i) for p, i in folders]
+                
+                if not any([Path.exists(p[0]) for p in folders]):
+                    raise Exception
+    
             except Exception as e:
-                self.report({'ERROR'}, f'{type(e).__name__}, Invalid Path: "{self.filename_ext}" is not in directory with correct game structure!')
-                return {'CANCELLED'}
-        else:
-            folders = None
-        
+                self.report({'WARNING'}, f'{type(e).__name__}, Invalid Path: "{Path.abspath(game_dir)}" is not in directory with correct game structure!\nSkipping armature and texture import...')
+                folders = None
+
+        import_tex = self.use_tex and bool(folders)
         
         # CREATE MATERIALS WITH RANDOM COLOR
         for n in range(num_textures):
             tex_name = str(textures[n])
-            mat = self.create_material(tex_name, folders)
+            mat = self.create_material(tex_name, folders, import_tex)
             trm_mesh.materials.append(mat)
 
         # ASSIGN MATERIALS
@@ -645,17 +655,17 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
             is_single_shader = num_shaders == 1
             shader_inst_node = trm_utils.get_TRM_shader_inst_ntree(shader_node_master, filename, sh, i)
             if sh.indices1.length > 0:
-                mats = self.define_shader(i, trm_utils.SHADER_SUBTYPES[0], sh.indices1, trm_mesh, is_single_shader, self.use_tex)
+                mats = self.define_shader(i, trm_utils.SHADER_SUBTYPES[0], sh.indices1, trm_mesh, is_single_shader, import_tex)
                 self.setup_materials(shader_inst_node, trm_utils.SHADER_SUBTYPES[0], trm_mesh, mats, folders, addon_prefs)
                 mat_shaders.update(mats)
                 is_single_shader = False
             if sh.indices2.length > 0:
-                mats = self.define_shader(i, trm_utils.SHADER_SUBTYPES[1], sh.indices2, trm_mesh, is_single_shader, self.use_tex)
+                mats = self.define_shader(i, trm_utils.SHADER_SUBTYPES[1], sh.indices2, trm_mesh, is_single_shader, import_tex)
                 self.setup_materials(shader_inst_node, trm_utils.SHADER_SUBTYPES[1], trm_mesh, mats, folders, addon_prefs)
                 mat_shaders.update(mats)
                 is_single_shader = False
             if sh.indices3.length > 0:
-                mats = self.define_shader(i, trm_utils.SHADER_SUBTYPES[2], sh.indices3, trm_mesh, is_single_shader, self.use_tex)
+                mats = self.define_shader(i, trm_utils.SHADER_SUBTYPES[2], sh.indices3, trm_mesh, is_single_shader, import_tex)
                 self.setup_materials(shader_inst_node, trm_utils.SHADER_SUBTYPES[2], trm_mesh, mats, folders, addon_prefs)
                 mat_shaders.update(mats)
         
@@ -678,7 +688,7 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
         
         # CREATE ARMATURE
         if skeldata_path:
-            rig, bone_names = self.create_armature(filename, skeldata_path, trm)
+            rig, bone_names = self.create_armature(filename, skeldata_path, game_id, trm)
         else:
             rig, bone_names = None, None
 
@@ -822,7 +832,7 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
                 layout.prop(self, 'auto_orient_bones')
         layout.prop(self, 'use_tex')
 
-        if self.use_tex:
+        if self.use_tex or self.import_armature:
             col = layout.column()
             if addon_prefs.game_path:
                 use_texdir = True                

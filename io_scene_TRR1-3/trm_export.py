@@ -171,6 +171,10 @@ class TR123R_OT_ExportTRM(Operator, ExportHelper):
     def write_trm_data(self, context, trm: bpy.types.Object, filepath):
         trm_mesh: bpy.types.Mesh = trm.data
 
+        if not trm_mesh.materials or not any([True for mat in trm_mesh.materials if mat]):
+            self.report({'WARNING'}, f'Mesh "{trm_mesh.name}" has no materials. Export Cancelled.')
+            return {'CANCELLED'}
+
         textures = []
         shader_map = {}
         mat_map = []
