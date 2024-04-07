@@ -633,7 +633,7 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
                     raise Exception
     
             except Exception as e:
-                self.report({'WARNING'}, f'{type(e).__name__}, Invalid Path: "{Path.abspath(game_dir)}" is not in directory with correct game structure!\nSkipping armature and texture import...')
+                self.report({'WARNING'}, f'{type(e).__name__}, Invalid Path: "{Path.abspath(game_dir)}" for filepath "{filepath}" is not in directory with correct game structure!\nSkipping armature and texture import...')
                 folders = None
 
         import_tex = self.use_tex and bool(folders)
