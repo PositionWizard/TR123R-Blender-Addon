@@ -2,7 +2,7 @@
 <!-- Entity Names table thanks to TRosettaStone3 at: "https://opentomb.github.io/TRosettaStone3/trosettastone.html#_entity_types" -->
 <entities>
     <game ID="1">
-        <model><ID>0</ID><name>Lara</name></model>
+        <model><ID>0</ID><name>LARA</name></model>
         <model><ID>1</ID><name>Lara pistols animation</name></model>
         <model><ID>2</ID><name>Lara shotgun animation</name></model>
         <model><ID>3</ID><name>Lara magnums animation</name></model>
@@ -21,7 +21,7 @@
         <model><ID>16</ID><name>Rat (on land)</name></model>
         <model><ID>17</ID><name>Rat (in water)</name></model>
         <model><ID>18</ID><name>T-Rex</name></model>
-        <model><ID>19</ID><name>Raptor</name></model>
+        <model><ID>19</ID><name>RAPTOR</name></model>
         <model><ID>20</ID><name>Mutant</name></model>
         <model><ID>21</ID><name>Mutant spawn point 1</name></model>
         <model><ID>22</ID><name>Mutant spawn point 2</name></model>
@@ -193,9 +193,9 @@
         <model><ID>239</ID><name>Debris 7</name></model>
     </game>
     <game ID="2">
-        <model><ID>0</ID><name>Lara</name></model>
+        <model><ID>0</ID><name>LARA</name></model>
         <model><ID>1</ID><name>Lara pistols animation</name></model>
-        <model><ID>2</ID><name>Laras ponytail</name></model>
+        <model><ID>2</ID><name>OUTFIT_HAIR</name></model>
         <model><ID>3</ID><name>Lara shotgun animation</name></model>
         <model><ID>4</ID><name>Lara automags animation</name></model>
         <model><ID>5</ID><name>Lara uzis animation</name></model>
@@ -443,9 +443,9 @@
         <model><ID>264</ID><name>Dragon explosion emitter</name></model>
     </game>
     <game ID="3">
-        <model><ID>0</ID><name>Lara</name></model>
+        <model><ID>0</ID><name>LARA</name></model>
         <model><ID>1</ID><name>Lara pistol animation</name></model>
-        <model><ID>2</ID><name>Laras ponytail</name></model>
+        <model><ID>2</ID><name>OUTFIT_HAIR</name></model>
         <model><ID>3</ID><name>Lara shotgun animation</name></model>
         <model><ID>4</ID><name>Lara Desert Eagle animation</name></model>
         <model><ID>5</ID><name>Lara Uzi animation</name></model>

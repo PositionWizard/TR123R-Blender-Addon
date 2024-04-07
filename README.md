@@ -1,4 +1,4 @@
-# TR123R Blender Addon v0.7.1
+# TR123R Blender Addon v0.7.2
 **[Blender 3.6 - 4.1](https://www.blender.org)** Import/Export addon for **[Tomb Raider I-III Remastered](https://store.steampowered.com/app/2478970)** game **.TRM** files.
 
 Addon originally started by [MuruCoder](https://github.com/MuruCoder) with my additions, other improvements and structure changes.
@@ -9,6 +9,8 @@ You can reach the original creator at **[TombRaiderForums](https://www.tombraide
 - [Features](#features)
 - [How-to](#how-to)
     - [Texture Import](#texture-import)
+    - [Armature Import](#armature-import)
+        - [Adding support for other TRMs](#adding-support-for-other-trms)
     - [Shader Setup](#shader-setup)
         - [Material Name Structure](#material-name-structure)
         - [Shader Instances](#shader-instances)
@@ -58,6 +60,26 @@ If the **Game Directory** is provided and .TRM file is being imported outside of
     - this option will be forced if **Game Directory** path in Addon's Preferences is empty
 
 ![import tex](https://github.com/PositionWizard/TR123R-Blender-Addon/assets/89351809/b7694e34-ca7a-4874-84ed-ea4b7d2a6c5f)
+
+### Armature Import
+You can choose to import Armatures along with TRM files by setting a flag in the TRM Import window, called "Import Armature".
+
+Some other options become available once the flag is enabled:
+- **Force Connect Bones**: will try to connect bones to one of their children (can be inaccurate and unintuitive at times, so keep that in mind)
+- **Auto Bone Orientation**: tries to automatically point bones in the same direction their parent is pointing at, which can look weird on things like claws, jaws, ears, etc, as it was more designed to help in displaying head, hand and foot bones
+    - available only once **Force Connect Bones** is enabled
+- **Game**: works exactly the same as option for [Texture Import](#texture-import) - allows to choose a game number or relative path to the TRM file in order to specify what game should the armature be imported from.
+    - different games can use different skeletons for visibly the same or similar model or TRM name
+    - Armatures cannot be imported without either importing directly from original game files or specifying **Game Directory** in the addon's preferences
+
+Not all Armatures can be imported yet, as this would require mapping all TRM names to the correct Entities for each game. The framework already supports looking for specific TRM names for a specific game but the table that it's using to look them up isn't entirely prepared yet. Some models like Lara's OUTFITs, HANDS and OUTFIT_HAIR are already set up but the rest of the names need to be manually updated.
+
+#### Adding support for other TRMs
+If anybody wants to contribute and add support for importing more Armatures, the addon has an XML file with entity names that can be modified, which should automatically enable import for updated names. The file can be found in the addon's directory at "%appdata%\Blender Foundation\Blender\4.1\scripts\addons\io_scene_TRR1-3\lib\TRM_Names.xml". There you can find Entity names for each game taken from [TRosettaStone3](https://opentomb.github.io/TRosettaStone3/trosettastone.html#_entity_types) website on reverse-engineering and documentation of classic Tomb Raider games. Those names need to be updated with their respecitve .TRM filenames, similarly to the model name "OUTFIT_HAIR" of ID="2" for game ID="2" or game ID="3".
+
+Be sure to run **Generate Skeleton Data** operator in addon's preferences after modifiactions to update the internal skeleton data and take effect on importing TRMs (more on this in [Skeleton Generator](#skeleton-generator) section).
+
+Remember you can find me in the **[TombRaiderForums](https://www.tombraiderforums.com/showthread.php?t=228896)** thread! You can share your edits there and let me know, so I can update the file in the main repository here.
 
 ### Shader Setup
 Imported .TRM models will already have a proper Shader setup for their Materials but this can also be configured for new Materials as well. To get desired results, there are a few technicalities and rules to follow.
@@ -167,7 +189,7 @@ You can Load and Save Lara's poses from Photo Mode. Tools for that can be access
 
 ![Poses](https://github.com/PositionWizard/TR123R-Blender-Addon/assets/89351809/ef316a21-d167-43b1-8db2-d0f0317777a1)
 
-You must import any Lara's .TRM model first, so you can load and save poses to and from the armature. Armatures should be automatically created upon importing .TRM models but currently only Lara's OUTFIT and HAIR meshes are supported. More information can be read in "Skeleton Generator" section below.
+You must import any Lara's .TRM model first, so you can load and save poses to and from the armature. Armatures should be automatically created upon importing .TRM models but currently only a few meshes are supported, including Lara's OUTFITs and HAIR. More information can be read in "[Armature Import](#armature-import)" section.
 
 To import poses, you must first specify the path of either "Game Directory" or "Photo Mode Poses" in Addon's Preferences. Both can be set and either are optional but at least one must be set to work. For each of the buttons in the tool, "Use Explicit Path" can be enabled to load, save and edit POSE.txt under "Photo Mode Poses" path.
 
@@ -200,4 +222,4 @@ To import poses, you must first specify the path of either "Game Directory" or "
 ### Skeleton Generator
 Armature data is automatically generated on first supported imported .TRM file. This data is needed to properly construct armatures for TRM file names but if anything goes wrong, this can be manually generated from the Addon's Preferences.
 
-Make sure you have corretly specified the "Game Directory" path and hit the **Generate Skeleton Data** button. It will take a few seconds and let you know with a message when it's done.
+Make sure you have corretly specified the "Game Directory" path and hit the **Generate Skeleton Data** button. It will take a few seconds and let you know with a message when it's done. Use this to refresh the list of available Armatures to import, after editing TRM_Names.xml.

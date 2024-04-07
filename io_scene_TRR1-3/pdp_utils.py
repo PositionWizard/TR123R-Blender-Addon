@@ -4,7 +4,7 @@ from struct import unpack
 from pathlib import Path
 from . import bin_parse
 
-TR_ENTITY_NAMES_FILEPATH = "lib/EntityNames.xml"
+TR_ENTITY_NAMES_FILEPATH = "lib/TRM_Names.xml"
 SKELETON_DATA_FILEPATH = "lib_user/SkeletonData.xml"
 
 def process_pdp(filepath):
