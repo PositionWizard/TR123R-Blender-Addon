@@ -1,15 +1,6 @@
 import bpy, math, bmesh, time, os
 from struct import pack
-
-def normalFloat2Byte(x, y, z):
-    length = math.sqrt((x * x) + (y * y) + (z * z))
-    if length != 0:
-        x = (x / length) * 126
-        y = (y / length) * 126
-        z = (z / length) * 126
-        return (round(x + 127), round(y + 127), round(z + 127))
-    return (127, 127, 127)
-
+from mathutils import Vector
 
 from bpy_extras.io_utils import ExportHelper
 from bpy.props import StringProperty, BoolProperty, FloatProperty
@@ -130,10 +121,19 @@ class TR123R_OT_ExportTRM(Operator, ExportHelper):
         result = {'PASS_THROUGH'}, trm, objs
         return result
     
+    def normal_float_to_byte(self, normal:Vector):
+        normal.negate()
+        xyz = []
+        for f in normal:
+            f *= 126
+            f = round(f+127)
+            xyz.append(f)
+        return xyz
+
     # VERTEX PACKER
-    def PackVertex(self, coordinate: list, normal, texture, groups, uv):
+    def pack_vertex(self, coordinate: list, normal, texture, groups, uv):
         # negate and pack normals in XZY order
-        nrs = normalFloat2Byte(-normal[0], -normal[2], -normal[1])
+        nrs = self.normal_float_to_byte(Vector((normal[0], normal[2], normal[1])))
 
         # vertices in XZY order
         vs = []
@@ -261,7 +261,7 @@ class TR123R_OT_ExportTRM(Operator, ExportHelper):
                 uv[0] = self.uv_offset(uv[0]) if uv_out_U else uv[0]
                 uv[1] = self.uv_offset(uv[1]) if uv_out_V else uv[1]
   
-                vertex = self.PackVertex(
+                vertex = self.pack_vertex(
                     trm_mesh.vertices[loop.vertex_index].co,
                     loop.normal,
                     mat_info['TexID'],
@@ -422,7 +422,12 @@ class TR123R_OT_ExportTRM(Operator, ExportHelper):
 
         try:
             result = self.write_trm_data(context, trm, self.filepath)
-        except:
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.report({'ERROR'}, traceback.format_exc())
+            del traceback
+
             result = {'CANCELLED'}
 
         self.clean_copies(obj_copies)
