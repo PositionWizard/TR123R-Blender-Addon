@@ -3,7 +3,7 @@ bl_info = {
     "author" : "MuruCoder, MaRaider, Czarpos",
     "description" : "Tools to handle .TRM and POSE.txt files for Tomb Raider Remastered I-III games.",
     "blender" : (4, 1, 0),
-    "version" : (0, 7, 2),
+    "version" : (0, 7, 3),
     "category": "Import-Export",
 	"location": "File > Import/Export; Material Properties > Surface; UV > N-Panel",
     "warning" : "Game uses DDS textures, must be handled separately.",
