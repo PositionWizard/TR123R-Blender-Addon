@@ -7,14 +7,7 @@ from . import utils as trm_utils
 from .pdp_utils import SKELETON_DATA_FILEPATH
 import xml.etree.ElementTree as ET
 
-def NormalBYTE2FLOAT(x, y, z):
-    x = x - 127
-    y = y - 127
-    z = z - 127
-    length = math.sqrt((x * x) + (y * y) + (z * z))
-    return (x / length, y / length, z / length)
-
-def CreateVertexGroups(trm, joints, rig, bones, armature, filename):
+def create_vertex_groups(trm, joints, rig, bones, armature, filename):
     # possible vertex group names, 10 per line for easier counting
     vg_names = [
         "root", "hips", "stomach", "chest", "torso", "neck", "head", "jaw", "jaw_lower", "jaw_upper",
@@ -461,6 +454,12 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
 
         return rig, bone_names
     
+    def normal_byte_to_float(self, xyz:tuple[int, int, int]):
+        vec = Vector([b-127 for b in xyz])
+        vec.normalize()
+        vec.negate()
+        return vec
+    
     def read_trm_data(self, context, filepath, addon_prefs, filename, skeldata_path):
         print("IMPORTING...")
         f = open(filepath, 'rb')
@@ -693,24 +692,23 @@ class TR123R_OT_ImportTRM(Operator, ImportHelper):
             rig, bone_names = None, None
 
         # CREATE & ASSIGN VERTEX GROUPS
-        CreateVertexGroups(trm, max_joint + 1, rig, bone_names, self.mesh_type, filename)
+        create_vertex_groups(trm, max_joint + 1, rig, bone_names, self.mesh_type, filename)
         for n in range(num_vertices):
             g = trm.vertex_groups
             v = vertices[n]
-            if v[11] > 0:
-                g[v[7]].add([n], v[11]/255, 'ADD')
-            if v[12] > 0:
-                g[v[8]].add([n], v[12]/255, 'ADD')
-            if v[13] > 0:
-                g[v[9]].add([n], v[13]/255, 'ADD')
+            for v_i, v_w in enumerate(range(11, 14), 7):
+                g_weight = v[v_w]
+                g_id = v[v_i]
+                if g_weight > 0:
+                    g[g_id].add([n], g_weight/255, 'ADD')
 
         # CREATE NORMALS
         trm_normals = []
 
         for n in range(num_vertices):
             v = vertices[n]
-            normal = NormalBYTE2FLOAT(v[3], v[5], v[4])
-            trm_normals.append(( -normal[0], -normal[1], -normal[2] ))
+            normal = self.normal_byte_to_float((v[3], v[5], v[4]))
+            trm_normals.append(normal)
 
         trm_mesh.normals_split_custom_set_from_vertices(trm_normals)
         if bpy.app.version < (4,1):
